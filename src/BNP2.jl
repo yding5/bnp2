@@ -4,9 +4,7 @@ using PyCall
 
 const pymunk = PyNULL()
 
-function __init__()
-    copy!(pymunk, pyimport("pymunk"))
-end
+__init__() = copy!(pymunk, pyimport("pymunk"))
 
 include("world.jl")
 export AbstractObject, Particle, massof, positionof, velocityof
@@ -30,11 +28,8 @@ function Plots.plot(traj::AbstractVector{T}, traj_ref=nothing) where {T<:Particl
         for i in 2:size(pos, 2)
             ax.plot([pos[1,i-1], pos[1,i]], [pos[2,i-1], pos[2,i]], "-o")
         end
-        if !isnothing(traj_ref)
-            for i in 2:size(pos, 2)
-                ax.plot([pos_ref[1,i-1], pos_ref[1,i]], [pos_ref[2,i-1], pos_ref[2,i]], "--"; c="gray")
-            end
-        end
+        !isnothing(traj_ref) &&
+            ax.plot(pos_ref[1,:], pos_ref[2,:], "--"; c="gray")
         ax.set_title("Position")
         ax.axis("equal")
     end
@@ -58,7 +53,7 @@ function Plots.plot(traj::AbstractVector{T}, traj_ref=nothing) where {T<:Particl
         ax.set_title("Speed")
     end
     
-    return fig
+    return fig, axes
 end
 
 export plot
