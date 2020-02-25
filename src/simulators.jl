@@ -57,7 +57,7 @@ struct PymunkSimulator{T} <: AbstractSimulator
     dt::T
 end
 
-function transition(obj, env::Earth, sim::PymunkSimulator)
+function transition(obj, env::EarthWithForce, sim::PymunkSimulator)
     @unpack mass, position, velocity = obj
     @unpack dt = sim
     
@@ -80,4 +80,35 @@ function transition(obj, env::Earth, sim::PymunkSimulator)
     velocity = [get.(Ref(space.shapes[1].body.velocity), 0:1)...]
     
     return Particle(mass, position, velocity)
+end
+
+function simulate(obj::T, env::EarthWithObjects, sim::PymunkSimulator, n_steps::Int) where {T}
+    @unpack mass, position, velocity = obj
+    @unpack dt = sim
+
+    space = pymunk.Space()
+    space.gravity = (0.0, -GRAV)
+    radius = 0.25
+    inertia = pymunk.moment_for_circle(mass, 0, radius, (0, 0))
+    body = pymunk.Body(mass, inertia)
+    body.position = position
+    body.velocity = velocity
+    shape = pymunk.Circle(body, radius, (0, 0))
+    shape.elasticity = 0.9
+    space.add(body, shape)
+    
+    body_static = pymunk.Body(body_type=pymunk.Body.STATIC)
+    for obj in env.objs
+        space.add(pymunkobj(body_static, obj))
+    end
+
+    traj = []
+    for t in 1:n_steps
+        space.step(dt)
+        position = [get.(Ref(space.shapes[1].body.position), 0:1)...]
+        velocity = [get.(Ref(space.shapes[1].body.velocity), 0:1)...]
+        push!(traj, Particle(mass, position, velocity))
+    end
+        
+    return Vector{typeof(first(traj))}(traj)
 end

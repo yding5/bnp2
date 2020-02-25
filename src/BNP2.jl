@@ -7,9 +7,9 @@ const pymunk = PyNULL()
 __init__() = copy!(pymunk, pyimport("pymunk"))
 
 include("world.jl")
-export AbstractObject, Particle, massof, positionof, velocityof
+export AbstractObject, Particle, massof, positionof, velocityof, Segment
 export AbstractForce, Force, forceof
-export AbstractEnvironment, Earth, getacceleration
+export AbstractEnvironment, EarthWithForce, getacceleration, EarthWithObjects
 include("simulators.jl")
 export AbstractSimulator, simulate, SimpleSimulator, DiffEqSimulator, PymunkSimulator, transition
 
