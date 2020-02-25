@@ -26,7 +26,10 @@ function Plots.plot(traj::AbstractVector{T}, traj_ref=nothing) where {T<:Particl
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(3 * 6, 4))
     let ax = axes[1]
         for i in 2:size(pos, 2)
-            ax.plot([pos[1,i-1], pos[1,i]], [pos[2,i-1], pos[2,i]], "-o")
+            ax.plot([pos[1,i-1], pos[1,i]], [pos[2,i-1], pos[2,i]], "-")
+        end
+        for i in 2:size(pos, 2)
+            ax.scatter([pos[1,i]], [pos[2,i]], s=16.0)
         end
         !isnothing(traj_ref) &&
             ax.plot(pos_ref[1,:], pos_ref[2,:], "--"; c="gray")
