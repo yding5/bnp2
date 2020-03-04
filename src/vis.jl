@@ -113,8 +113,8 @@ function animof(space, sim; kwargs...)
     return animation.FuncAnimation(fig, func, init_func=init_func, frames=64, interval=35, blit=false)
 end
 
-function animof(env, sim::DynSysSimulator, n_frames; xlim=nothing, ylim=nothing, kwargs...)
-    τ = simulate(env, sim, n_frames)
+function animof(env, sim::DiffEqSimulator, n_frames; xlim=nothing, ylim=nothing, kwargs...)
+    τ = stateof.(simulate(env, sim, n_frames))
 
     fig, ax = plt.subplots(figsize=(5, 5))
     
@@ -129,17 +129,16 @@ function animof(env, sim::DynSysSimulator, n_frames; xlim=nothing, ylim=nothing,
     function draw!(t)
         reset!(ax)
         
-        space_0, space_t = let u0 = τ[1,:], ut = τ[t,:]
-            q0, p0 = pqof(u0)
-            qt, pt = pqof(ut)
+        space_0, space_t = let u0 = τ[1], ut = τ[t]
             tuple(
-                Space(Particle.(massof(env), vec2list(q0), vec2list(p0))),
-                Space(Particle.(massof(env), vec2list(qt), vec2list(pt))),
+                Space(Particle.(massof(env), vec2list(u0.q), vec2list(u0.p))),
+                Space(Particle.(massof(env), vec2list(ut.q), vec2list(ut.p))),
             )
         end
 
+        position = hcat(map(x -> x.q, τ[1:t])...)
         for i in 1:length(env.objects)
-            plot!(ax, TwoDimPath(τ[1:t,2i-1], τ[1:t,2i]), "--"; c="#777777", alpha=0.5)
+            plot!(ax, TwoDimPath(position[2i-1,:], position[2i,:]), "--"; c="#777777", alpha=0.5)
             plot!(ax, space_0.objects[i])
             plot!(ax, space_t.objects[i]; do_plotvelocity=true)
         end

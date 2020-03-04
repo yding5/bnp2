@@ -53,7 +53,7 @@ end
 
 ### OrdinaryDiffEq
 
-using OrdinaryDiffEq: DynamicalODEProblem, VerletLeapfrog, init, step!
+using OrdinaryDiffEq: DynamicalODEProblem, VerletLeapfrog, Tsit5, init, step!
 
 struct DiffEqSimulator{T} <: AbstractSimulator
     dt::T
@@ -69,9 +69,25 @@ function transition(obj, env, sim::DiffEqSimulator)
     dvdt(pos, vel, p, t) = accelerationof(env, Particle(mass, pos, vel))
     
     prob = DynamicalODEProblem(dpdt, dvdt, positionof(obj), velocityof(obj), (0.0, 1.0))
-    int = init(prob, VerletLeapfrog(); dt=dt)
+    int = init(prob, Tsit5(); dt=dt)
     step!(int, dt)
     return Particle(mass, int.u.x[1], int.u.x[2])
+end
+
+function transition(env::AbstractEnvironment, sim::DiffEqSimulator)
+    @unpack dt = sim
+    
+    Env(pos, vel) = Space(Particle.(massof(env), vec2list(pos), vec2list(vel)))
+    
+    # d position d t = velocity
+    dpdt(pos, vel, p, t) = vel
+    # d velocity d t = acceleration
+    dvdt(pos, vel, p, t) = accelerationof(Env(pos, vel))
+    
+    prob = DynamicalODEProblem(dpdt, dvdt, positionof(env), velocityof(env), (0.0, 1.0))
+    int = init(prob, Tsit5(); dt=dt)
+    step!(int, dt)
+    return Env(int.u.x[1], int.u.x[2])
 end
 
 ### Pymunk
@@ -105,7 +121,7 @@ function transition(obj, env::EarthWithForce, sim::PymunkSimulator)
     return Particle(mass, position, velocity)
 end
 
-function simulate(obj::T, env::EarthWithObjects, sim::PymunkSimulator, n_steps::Int) where {T}
+function simulate(obj::T, env::EarthWithObjects, sim::PymunkSimulator, n_steps::Int) where {T<:AbstractObject}
     @unpack mass, position, velocity = obj
     @unpack dt = sim
 
@@ -146,10 +162,6 @@ struct DynSysSimulator{T} <: AbstractSimulator
     dt::T
 end
 
-function pqof(u)
-    dim = div(length(u), 2)
-    return u[1:dim], u[dim+1:end]
-end
 vec2list(v) = [v[i:i+1] for i in 1:2:length(v)]
 
 function simulate(env::AbstractEnvironment, sim::DynSysSimulator, n_steps::Int)
@@ -158,14 +170,13 @@ function simulate(env::AbstractEnvironment, sim::DynSysSimulator, n_steps::Int)
     state = stateof(env)
     parameters = nothing
     system = ContinuousDynamicalSystem(state, parameters) do du, u, parameters, t
-        q, p = pqof(u)
-        dim = length(q)
-        space = Space(Particle.(massof(env), vec2list(q), vec2list(p)))
-        dq, dp = p, accelerationof(space)
+        dim = length(u.q)
+        space = Space(Particle.(massof(env), vec2list(u.q), vec2list(u.p)))
+        dq, dp = u.p, accelerationof(space)
         du[1:dim], du[dim+1:end] = dq, dp
     end
     
-    return trajectory(system, n_steps * dt; dt=dt)
+    return trajectory(system, n_steps * dt, state; dt=dt)
 end
 
 ;

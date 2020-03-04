@@ -1,6 +1,6 @@
 module BNP2
 
-using PyCall, LinearAlgebra, ArgCheck, Reexport, FileIO, Images
+using PyCall, LinearAlgebra, ArgCheck, Reexport, FileIO, Images, LabelledArrays
 @reexport using Parameters, MLToolkit.Plots
 using PhysicalConstants: CODATA2014, CODATA2018
 

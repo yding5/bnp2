@@ -99,7 +99,8 @@ accelerationof(s::Space) = s.acceleration
 function stateof(s::Space)
     position = vcat(positionof.(s.objects)...)
     velocity = vcat(velocityof.(s.objects)...)
-    return vcat(position, velocity)
+    l1, l2 = length.((position, velocity))
+    return @LArray vcat(position, velocity) (q=1:l1, p=l1+1:l1+l2)
 end
 
 function acceleration_by_interaction(objects::Tuple)
