@@ -1,24 +1,16 @@
 abstract type AbstractSimulator end
 
-function simulate(obj::T, env::AbstractEnvironment, sim::AbstractSimulator, n_steps::Int) where {T<:AbstractObject}
-    traj = T[]
+function simulate(env::T, sim::AbstractSimulator, n_steps::Int) where {T<:AbstractEnvironment}
+    traj = Vector{T}(undef, n_steps)
     for i in 1:n_steps
-        obj′ = transition(obj, env, sim)
-        push!(traj, obj′)
-        obj = obj′
+        traj[i] = transition(i == 1 ? env : traj[i-1], sim)
     end
     return traj
 end
 
-function simulate(env::T, sim::AbstractSimulator, n_steps::Int) where {T<:AbstractEnvironment}
-    traj = T[]
-    for i in 1:n_steps
-        env′ = transition(env, sim)
-        push!(traj, env′)
-        env = env′
-    end
-    return traj
-end
+transition(env::AbstractEnvironment, dt::AbstractFloat) = transition(env, SimpleSimulator(dt))
+simulate(env::AbstractEnvironment, dt::AbstractFloat, n_steps::Int) =
+    simulate(env, SimpleSimulator(dt), n_steps)
 
 ### Simple
 
@@ -26,68 +18,44 @@ struct SimpleSimulator{T} <: AbstractSimulator
     dt::T
 end
 
-transition(env, dt::AbstractFloat) = transition(env, SimpleSimulator(dt))
-
-simulate(env::AbstractEnvironment, dt::AbstractFloat, n_steps::Int) =
-    simulate(env, SimpleSimulator(dt), n_steps)
-
-function transition(obj, env, sim::SimpleSimulator)
-    @unpack mass, position, velocity = obj
-    @unpack dt = sim
-    velocity += dt / 2 * accelerationof(env, obj)
-    position += dt * velocity
-    obj = Particle(massof(obj), position, velocity)
-    velocity += dt / 2 * accelerationof(env, obj)
-    return Particle(massof(obj), position, velocity)
-end
-
-function transition(env, sim::SimpleSimulator)
+function transition(env::AbstractEnvironment, sim::SimpleSimulator)
     q, p = positionof(env), velocityof(env)
-    @unpack dt = sim
-    p += dt / 2 * accelerationof(env)
-    q += dt * p
-    env = Space(Particle.(massof(env), vec2list(q), vec2list(p)))
-    p += dt / 2 * accelerationof(env)
-    return Space(Particle.(massof(env), vec2list(q), vec2list(p)))
+    p += sim.dt / 2 * accelerationof(env)
+    q += sim.dt * p
+    env = reconstruct(env, q, p)
+    p += sim.dt / 2 * accelerationof(env)
+    return reconstruct(env, q, p)
 end
 
 ### OrdinaryDiffEq
 
-using OrdinaryDiffEq: DynamicalODEProblem, VerletLeapfrog, Tsit5, init, step!
+using OrdinaryDiffEq: DynamicalODEProblem, Tsit5, init, step!
 
 struct DiffEqSimulator{T} <: AbstractSimulator
     dt::T
 end
 
-function transition(obj, env, sim::DiffEqSimulator)
-    @unpack mass = obj
-    @unpack dt = sim
-    
-    # d position d t = velocity
-    dpdt(pos, vel, p, t) = vel
-    # d velocity d t = acceleration
-    dvdt(pos, vel, p, t) = accelerationof(env, Particle(mass, pos, vel))
-    
-    prob = DynamicalODEProblem(dpdt, dvdt, positionof(obj), velocityof(obj), (0.0, 1.0))
-    int = init(prob, Tsit5(); dt=dt)
-    step!(int, dt)
-    return Particle(mass, int.u.x[1], int.u.x[2])
+function init_prob(env, sim, n_steps=1)
+    dqdt(q, p, args...) = p                                         # d position d t = velocity
+    dpdt(q, p, args...) = accelerationof(reconstruct(env, q, p))    # d velocity d t = acceleration
+    prob = DynamicalODEProblem(dqdt, dpdt, positionof(env), velocityof(env), (0.0, sim.dt * n_steps))
+    return init(prob, Tsit5())  # NOTE: `Tsit5` is much better than `VerletLeapfrog`.
 end
 
 function transition(env::AbstractEnvironment, sim::DiffEqSimulator)
-    @unpack dt = sim
-    
-    Env(pos, vel) = Space(Particle.(massof(env), vec2list(pos), vec2list(vel)))
-    
-    # d position d t = velocity
-    dpdt(pos, vel, p, t) = vel
-    # d velocity d t = acceleration
-    dvdt(pos, vel, p, t) = accelerationof(Env(pos, vel))
-    
-    prob = DynamicalODEProblem(dpdt, dvdt, positionof(env), velocityof(env), (0.0, 1.0))
-    int = init(prob, Tsit5(); dt=dt)
-    step!(int, dt)
-    return Env(int.u.x[1], int.u.x[2])
+    int = init_prob(env, sim)
+    step!(int, sim.dt)
+    return reconstruct(env, int.u.x[1], int.u.x[2])
+end
+
+function simulate(env::T, sim::DiffEqSimulator, n_steps::Int) where {T<:AbstractEnvironment}
+    int = init_prob(env, sim, n_steps)
+    traj = Vector{T}(undef, n_steps)
+    for i in 1:n_steps
+        step!(int, sim.dt, true)
+        traj[i] = reconstruct(env, int.u.x[1], int.u.x[2])
+    end
+    return traj
 end
 
 ### Pymunk
@@ -152,31 +120,6 @@ function simulate(obj::T, env::EarthWithObjects, sim::PymunkSimulator, n_steps::
     end
     
     return Vector{typeof(first(traj))}(traj)
-end
-
-### DynamicalSystems
-
-using DynamicalSystems
-
-struct DynSysSimulator{T} <: AbstractSimulator
-    dt::T
-end
-
-vec2list(v) = [v[i:i+1] for i in 1:2:length(v)]
-
-function simulate(env::AbstractEnvironment, sim::DynSysSimulator, n_steps::Int)
-    @unpack dt = sim
-    
-    state = stateof(env)
-    parameters = nothing
-    system = ContinuousDynamicalSystem(state, parameters) do du, u, parameters, t
-        dim = length(u.q)
-        space = Space(Particle.(massof(env), vec2list(u.q), vec2list(u.p)))
-        dq, dp = u.p, accelerationof(space)
-        du[1:dim], du[dim+1:end] = dq, dp
-    end
-    
-    return trajectory(system, n_steps * dt, state; dt=dt)
 end
 
 ;

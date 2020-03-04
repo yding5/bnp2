@@ -3,6 +3,7 @@ module BNP2
 using PyCall, LinearAlgebra, ArgCheck, Reexport, FileIO, Images, LabelledArrays
 @reexport using Parameters, MLToolkit.Plots
 using PhysicalConstants: CODATA2014, CODATA2018
+import Parameters: reconstruct
 
 const G = CODATA2018.NewtonianConstantOfGravitation.val
 const g = CODATA2014.StandardAccelerationOfGravitation.val
@@ -19,6 +20,10 @@ function __init__()
     copy!(animation, pyimport("matplotlib.animation"))
     copy!(matplotlib_util, pyimport("pymunk.matplotlib_util"))
 end
+
+### Utilites
+
+_tolist(v, d::Int=2) = [v[i:i+d-1] for i in 1:2:length(v)]
 
 include("laws.jl")
 include("world.jl")

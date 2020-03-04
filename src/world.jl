@@ -10,11 +10,6 @@ struct Particle{D, M, P, V} <: AbstractObject
     velocity::V # m^2 s^-1
 end
 
-massof(p::Particle) = p.mass
-positionof(p::Particle) = p.position
-velocityof(p::Particle) = p.velocity
-dimensionof(p::Particle{D}) where {D} = 2D
-
 function Particle(m::M, p::P, v::V) where {M, P, V}
     @argcheck length(p) == length(v)
     return Particle{length(p), M, P, V}(m, p, v)
@@ -22,6 +17,14 @@ end
 Particle(mass, dim::Int) = Particle(mass, zeros(dim), zeros(dim))
 Particle(mass, position::AbstractVector) = 
     Particle(mass, position, zeros(eltype(position), length(position)))
+Particle(mass, position::AbstractVector, ::Nothing) = Particle(mass, position)
+
+reconstruct(p::Particle, pos, vel) = reconstruct(p; position=pos, velocity=vel)
+
+massof(p::Particle) = p.mass
+positionof(p::Particle) = p.position
+velocityof(p::Particle) = p.velocity
+dimensionof(p::Particle{D}) where {D} = 2D
 
 function forceof(p1::Particle, p2::Particle)
     p1 === p2 && return 0
@@ -89,6 +92,14 @@ end
 
 Space(os::AbstractVector) = Space(tuple(os...))
 Space(os::Tuple) = Space(os, acceleration_by_interaction(os))
+
+reconstruct(s::Space, pvec::T, vvec::T) where {T<:AbstractVector{<:Real}} = 
+    reconstruct(s, _tolist.((pvec, vvec))...)
+reconstruct(s::Space, plist, vlist) = Space(reconstruct.(s.objects, plist, vlist))
+
+particles(mvec, pvec::T, vvec::T) where {T<:AbstractVector{<:Real}} = 
+    particles(mvec, _tolist.((pvec, vvec)))
+particles(mlist, plist, plist) = Particle.(mlist, plist, plist)
 
 massof(s::Space) = massof.(s.objects)
 positionof(s::Space) = vcat(positionof.(s.objects)...)

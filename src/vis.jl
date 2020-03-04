@@ -70,6 +70,27 @@ function plot_force!(ax, p, f)
     )
 end
 
+function preview_frames(videodir, frame_idcs)
+    n = length(frame_idcs)
+    @assert n > 1 "Only support previewing more than 1 frames."
+    img = nothing
+    fig, axes = plt.subplots(1, n, figsize=(3 * n, 3))
+    for (ax, id) in zip(axes, frame_idcs)
+        img = load(joinpath(videodir, "frame-$id.png"))
+        img = Array(channelview(float.(img)))
+        img = permutedims(img, (2, 3, 1))
+        img = img[:,:,1:3]
+        ax.imshow(img)
+        ax.set_title("frame-$id")
+        ax.set_xticks([])
+        ax.set_yticks([])
+    end
+    display(fig)
+    println("size(img): ", size(img))
+end
+
+### Animation
+
 function init_anim(space, sim::PymunkSimulator; savedir=nothing)
     @unpack dt = sim
     fig = plt.figure(figsize=(3, 3))
@@ -114,8 +135,13 @@ function animof(space, sim; kwargs...)
 end
 
 function animof(env, sim::DiffEqSimulator, n_frames; xlim=nothing, ylim=nothing, kwargs...)
-    τ = stateof.(simulate(env, sim, n_frames))
+    traj = simulate(env, sim, n_frames)
+    ps = positionof.(traj)
+    vs = velocityof.(traj)
+    return animof(hcat(ps...), hcat(vs...); xlim=xlim, ylim=ylim, kwargs...)
+end
 
+function animof(Q, P=nothing; xlim=nothing, ylim=nothing, kwargs...)
     fig, ax = plt.subplots(figsize=(5, 5))
     
     function reset!(ax)
@@ -128,40 +154,17 @@ function animof(env, sim::DiffEqSimulator, n_frames; xlim=nothing, ylim=nothing,
     
     function draw!(t)
         reset!(ax)
-        
-        space_0, space_t = let u0 = τ[1], ut = τ[t]
-            tuple(
-                Space(Particle.(massof(env), vec2list(u0.q), vec2list(u0.p))),
-                Space(Particle.(massof(env), vec2list(ut.q), vec2list(ut.p))),
-            )
+        for i in 1:3
+            plot!(ax, TwoDimPath(Q[2i-1,1:t], Q[2i,1:t]), "--"; c="#777777", alpha=0.5)
         end
-
-        position = hcat(map(x -> x.q, τ[1:t])...)
-        for i in 1:length(env.objects)
-            plot!(ax, TwoDimPath(position[2i-1,:], position[2i,:]), "--"; c="#777777", alpha=0.5)
-            plot!(ax, space_0.objects[i])
-            plot!(ax, space_t.objects[i]; do_plotvelocity=true)
-        end
+        plot!.(Ref(ax), 
+            Particle.(nothing, _tolist(Q[:,1]), isnothing(P) ? nothing : _tolist(P[:,1]))
+        )
+        plot!.(Ref(ax), 
+            Particle.(nothing, _tolist(Q[:,t]), isnothing(P) ? nothing : _tolist(P[:,t])); 
+            do_plotvelocity=true
+        )
     end
     
-    return animation.FuncAnimation(fig, draw!; init_func=init!, frames=1:size(τ, 1), interval=50, blit=false)
-end
-
-function preview_frames(videodir, frame_idcs)
-    n = length(frame_idcs)
-    @assert n > 1 "Only support previewing more than 1 frames."
-    img = nothing
-    fig, axes = plt.subplots(1, n, figsize=(3 * n, 3))
-    for (ax, id) in zip(axes, frame_idcs)
-        img = load(joinpath(videodir, "frame-$id.png"))
-        img = Array(channelview(float.(img)))
-        img = permutedims(img, (2, 3, 1))
-        img = img[:,:,1:3]
-        ax.imshow(img)
-        ax.set_title("frame-$id")
-        ax.set_xticks([])
-        ax.set_yticks([])
-    end
-    display(fig)
-    println("size(img): ", size(img))
+    anim = animation.FuncAnimation(fig, draw!; init_func=init!, frames=1:size(Q, 2), interval=50, blit=false)
 end
