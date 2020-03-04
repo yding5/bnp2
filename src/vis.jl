@@ -51,9 +51,9 @@ function arrowwidthof(ax)
     return 1 / Δx / 5
 end
 
-function Plots.plot!(ax, p::Particle{2}; do_plotvelocity=false)
+function Plots.plot!(ax, p::Particle{2}; color="#E24A33", alpha=1.0, do_plotvelocity=false)
     @unpack position, velocity = p
-    ax.scatter([position[1]], [position[2]], color="#E24A33")
+    ax.scatter([position[1]], [position[2]], color=color, alpha=alpha)
     if do_plotvelocity && norm(velocity) > 0
         ax.arrow(
             position..., velocity...; 
@@ -134,37 +134,36 @@ function animof(space, sim; kwargs...)
     return animation.FuncAnimation(fig, func, init_func=init_func, frames=64, interval=35, blit=false)
 end
 
-function animof(env, sim::DiffEqSimulator, n_frames; xlim=nothing, ylim=nothing, kwargs...)
+function animof(env::AbstractEnvironment, sim::DiffEqSimulator, n_frames; kwargs...)
     traj = simulate(env, sim, n_frames)
     ps = positionof.(traj)
     vs = velocityof.(traj)
-    return animof(hcat(ps...), hcat(vs...); xlim=xlim, ylim=ylim, kwargs...)
+    return animof(hcat(ps...), hcat(vs...); kwargs...)
 end
 
-function animof(Q, P=nothing; xlim=nothing, ylim=nothing, kwargs...)
+animof(qs::AbstractVector{<:AbstractVector}; kwargs...) = animof(hcat(qs...); kwargs...)
+function animof(Q::AbstractMatrix, P=nothing; d=2, kwargs...)
+    @argcheck d == 2
+    n = div(size(Q, 1), d)
+    ms = fill(nothing, n)
+
     fig, ax = plt.subplots(figsize=(5, 5))
+    dev = max(3maximum(std(Q[1:2:end,:]; dims=1)), 3maximum(std(Q[2:2:end,:]; dims=1)))
     
-    function reset!(ax)
-        ax.clear()
-        !isnothing(xlim) && ax.set_xlim(xlim)
-        !isnothing(ylim) && ax.set_ylim(ylim)
-    end
-    
-    init!() = reset!(ax)
+    init!() = ax.clear()
     
     function draw!(t)
-        reset!(ax)
-        for i in 1:3
+        ax.clear()
+        xs, ys = Q[1:2:end,t], Q[2:2:end,t]
+        xmid, ymid = mean(xs), mean(ys)
+        ax.set_xlim([xmid - dev, xmid + dev])
+        ax.set_ylim([ymid - dev, ymid + dev])
+        for i in 1:n
             plot!(ax, TwoDimPath(Q[2i-1,1:t], Q[2i,1:t]), "--"; c="#777777", alpha=0.5)
         end
-        plot!.(Ref(ax), 
-            Particle.(nothing, _tolist(Q[:,1]), isnothing(P) ? nothing : _tolist(P[:,1]))
-        )
-        plot!.(Ref(ax), 
-            Particle.(nothing, _tolist(Q[:,t]), isnothing(P) ? nothing : _tolist(P[:,t])); 
-            do_plotvelocity=true
-        )
+        plot!.(Ref(ax), Particle.(ms, Q[:,1], isnothing(P) ? nothing : P[:,1]); color="#777777", alpha=0.5)
+        plot!.(Ref(ax), Particle.(ms, Q[:,t], isnothing(P) ? nothing : P[:,t]); do_plotvelocity=true)
     end
     
-    anim = animation.FuncAnimation(fig, draw!; init_func=init!, frames=1:size(Q, 2), interval=50, blit=false)
+    return animation.FuncAnimation(fig, draw!; init_func=init!, frames=1:size(Q, 2), interval=50, blit=false)
 end
