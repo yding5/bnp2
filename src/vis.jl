@@ -12,7 +12,7 @@ function Plots.plot(traj::AbstractVector{T}, traj_ref=nothing; do_scatter=false)
     let ax = axes[1]
         len = size(pos, 2)
         for i in 2:len
-            c = cmap.to_rgba(1 - i / len)
+            c = cmap.to_rgba(i / len)
             ax.plot([pos[1,i-1], pos[1,i]], [pos[2,i-1], pos[2,i]], "-", c=c)
             do_scatter && ax.scatter([pos[1,i]], [pos[2,i]], s=16.0, c=[c])
         end
@@ -24,10 +24,10 @@ function Plots.plot(traj::AbstractVector{T}, traj_ref=nothing; do_scatter=false)
     let ax = axes[2]
         len = size(vel, 2)
         for i in 1:len
-            ax.plot([0, vel[1,i]], [0, vel[2,i]], "-", c=cmap.to_rgba(1 - i / len))
+            ax.plot([0, vel[1,i]], [0, vel[2,i]], "-", c=cmap.to_rgba(i / len))
         end
         if !isnothing(traj_ref)
-            for i in 1:size(vel, 2)
+            for i in 1:size(vel_ref, 2)
                 ax.plot([0, vel_ref[1,i]], [0, vel_ref[2,i]], "--"; c="gray")
             end
         end
@@ -52,7 +52,7 @@ function arrowwidthof(ax)
 end
 
 function Plots.plot!(ax, p::Particle{2}; color="#E24A33", alpha=1.0, do_plotvelocity=false)
-    @unpack position, velocity = p
+    position, velocity = positionof(p), velocityof(p)
     ax.scatter([position[1]], [position[2]], color=color, alpha=alpha)
     if do_plotvelocity && norm(velocity) > 0
         ax.arrow(

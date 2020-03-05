@@ -21,20 +21,18 @@ Particle(mass::T, dim::Int) where {T} = Particle(mass, zeros(T, 2, dim))
 Particle(mass, p::AbstractVector{T}) where {T} = Particle(mass, p, zeros(T, length(p)))
 Particle(mass, p::AbstractVector, ::Nothing) = Particle(mass, p)
 Particle(mass, p::T, v::T) where {T<:AbstractVector} = Particle(mass, vcat(p', v'))
-reconstruct(p::Particle, state) = Particle(p.mass, state)
+reconstruct(p::Particle, args...) = Particle(p.mass, args...)
 
 function Base.Broadcast.broadcasted(
-    ::typeof(Particle), ms::AbstractVector, states::AbstractMatrix{<:Real}
+    ::typeof(Particle), ms::AbstractVector, states::AbstractMatrix
 )
-    d = div(size(states, 2), length(ms))
-    return Particle.(ms, _tolist(d, states))
+    return Particle.(ms, _tolist(div(size(states, 2), length(ms)), states))
 end
 
 function Base.Broadcast.broadcasted(
     ::typeof(Particle), ms::AbstractVector, ps::AbstractVector{<:Real}, vs=nothing
 )
-    d = div(length(ps), length(ms))
-    return Particle.(ms, _tolist(d, ps), _tolist(d, vs))
+    return Particle.(ms, _tolist.(div(length(ps), length(ms)), (ps, vs))...)
 end
 
 """Forced"""
@@ -64,7 +62,7 @@ Bar(pstart, pend) = Bar(pstart, pend, 0.3, 0.9)
 
 function pymunkobj(body, bar::Bar)
     v = bar.pstart - bar.pend
-    u = [v[2], -v[1]] / sqrt(sum(v.^2)) * bar.tickness / 2
+    u = orthonormalvecof(v) * bar.tickness / 2
     obj = pymunk.Poly(body, [bar.pstart - u, bar.pstart + u, bar.pend + u, bar.pend - u])
     obj.elasticity = bar.elasticity
     return obj
@@ -74,42 +72,28 @@ end
 
 abstract type AbstractEnvironment end
 
-# TODO: introduce D
 """Space"""
-struct Space{D, O<:Tuple, A} <: AbstractEnvironment
+struct Space{O<:Tuple, A} <: AbstractEnvironment
     objects::O
     acceleration::A
 end
 
-Space(os::O, acc::A) where {O, A} = Space{dimensionof(first(os)), O, A}(os, acc)
-Space(os::AbstractVector) = Space(tuple(os...))
+stateof(s::Space) = hcat(stateof.(s.objects)...)
+positionof(s::Space) = vcat(positionof.(s.objects)...)
+velocityof(s::Space) = vcat(velocityof.(s.objects)...)
+dimensionof(s::Space) = dimensionof(first(s.objects))
+objectsof(s::Space) = s.objects
+accelerationof(s::Space) = s.acceleration
+
+Space(os::AbstractVector, args...) = Space(tuple(os...), args...)
 function Space(os::Tuple)
     @argcheck all(dimensionof(first(os)) .== dimensionof.(os))
     return Space(os, acceleration_by_interaction(os))
 end
 
-reconstruct(s::Space, objects) = Space(objects)
-reconstruct(s::Space{D}, pvec::T, vvec::T) where {D, T<:AbstractVector{<:Real}} = 
-    reconstruct(s, _tolist.(D, (pvec, vvec))...)
-reconstruct(s::Space, plist, vlist) = Space(reconstruct.(s.objects, plist, vlist))
-
-massof(s::Space) = massof.(s.objects)
-positionof(s::Space) = vcat(positionof.(s.objects)...)
-velocityof(s::Space) = vcat(velocityof.(s.objects)...)
-dimensionof(s::Space{D}) where {D} = D
-objectsof(s::Space) = s.objects
-accelerationof(s::Space) = s.acceleration
-
-function stateof(s::Space)
-    position = vcat(positionof.(s.objects)...)
-    velocity = vcat(velocityof.(s.objects)...)
-    l1, l2 = length.((position, velocity))
-    return @SLVector((q=1:l1, p=l1+1:l1+l2))(vcat(position, velocity))
-end
-
-addforce(::Nothing, f2) = f2
-addforce(f1, ::Nothing) = f1
-addforce(f1, f2) = f1 + f2
+forceadd(::Nothing, f2) = f2
+forceadd(f1, ::Nothing) = f1
+forceadd(f1, f2) = f1 + f2
 
 function acceleration_by_interaction(objects::Tuple)
     fs = []
@@ -120,10 +104,16 @@ function acceleration_by_interaction(objects::Tuple)
         else
             f1 = nothing
         end
-        push!(fs, addforce(f1, forceof(o1)) / massof(o1))
+        push!(fs, forceadd(f1, forceof(o1)) / massof(o1))
     end
     return vcat(fs...)
 end
+
+reconstruct(s::Space, objects) = Space(objects)
+reconstruct(s::Space, states::AbstractMatrix) = 
+    Space(reconstruct.(s.objects, _tolist(dimensionof(s), states)))
+reconstruct(s::Space, ps::AbstractVector{<:Real}, vs=nothing) = 
+    Space(reconstruct.(s.objects, _tolist.(dimensionof(s), (ps, vs))...))
 
 """WithStatic"""
 struct WithStatic{S<:AbstractEnvironment, F} <: AbstractEnvironment
@@ -135,7 +125,7 @@ end
 
 function forceof(p1::Particle, p2::Particle)
     p1 === p2 && return nothing
-    Δp = p2.position - p1.position
+    Δp = positionof(p2) - positionof(p1)
     r² = sum(abs2, Δp)
     u = Δp / sqrt(r²)
     return attractive_force(p1.mass, p2.mass, r²) * u

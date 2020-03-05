@@ -25,11 +25,16 @@ _tolist(d::Int, v::AbstractVector) = [v[i:i+d-1] for i in 1:d:length(v)]
 _tolist(d::Int, m::AbstractMatrix) = [m[:,i:i+d-1] for i in 1:d:size(m, 2)]
 _tolist(d::Int, ::Nothing) = nothing
 
+function orthonormalvecof(v::AbstractVector)
+    @argcheck length(v) == 2
+    return [v[2], -v[1]] / sqrt(sum(v.^2))
+end
+
 include("laws.jl")
 include("world.jl")
 export AbstractObject, massof, stateof, positionof, velocityof, dimensionof, forceof
 export Forced, Particle, Bar
-export AbstractEnvironment, stateof, accelerationof
+export AbstractEnvironment, objectsof, accelerationof
 export Space, WithStatic
 include("simulators.jl")
 export AbstractSimulator, simulate, transition, SimpleSimulator, DiffEqSimulator, PymunkSimulator
