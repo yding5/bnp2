@@ -63,30 +63,28 @@ struct PymunkSimulator{T} <: AbstractSimulator
     dt::T
 end
 
-# function transition(obj, env::EarthWithForce, sim::PymunkSimulator)
-#     @unpack mass, position, velocity = obj
-#     @unpack dt = sim
-    
-#     space = pymunk.Space()
-#     space.gravity = (0, -g)
-#     radius = 0.25
-#     inertia = pymunk.moment_for_circle(mass, 0, radius, (0, 0))
-#     body = pymunk.Body(mass, inertia)
-#     body.position = position
-#     body.velocity = velocity
-#     shape = pymunk.Circle(body, radius, (0, 0))
-#     space.add(body, shape)
-#     space.shapes[1].body.apply_force_at_world_point(
-#         force=tuple((forceof(env.force, obj))...), 
-#         point=(0, 0),
-#     )
-
-#     space.step(dt)
-#     position = [get.(Ref(space.shapes[1].body.position), 0:1)...]
-#     velocity = [get.(Ref(space.shapes[1].body.velocity), 0:1)...]
-    
-#     return Particle(mass, position, velocity)
-# end
+function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
+    objects = objectsof(env)
+    space = pymunk.Space()
+    radius = 0.25
+    for obj in objects
+        m = massof(obj)
+        inertia = pymunk.moment_for_circle(m, 0, radius, (0, 0))
+        body = pymunk.Body(m, inertia)
+        body.position = positionof(obj)
+        body.velocity = velocityof(obj)
+        shape = pymunk.Circle(body, radius, (0, 0))
+        body.apply_force_at_world_point(force=tuple(forceof(obj)...), point=(0, 0))
+        space.add(body, shape)
+    end
+    space.step(sim.dt)
+    objects = map(1:length(objectsof(env))) do i
+        position = [get.(Ref(space.shapes[i].body.position), 0:1)...]
+        velocity = [get.(Ref(space.shapes[i].body.velocity), 0:1)...]
+        reconstruct(objects[i], position, velocity)
+    end
+    return reconstruct(env, objects)
+end
 
 # function simulate(obj::T, env::EarthWithObjects, sim::PymunkSimulator, n_steps::Int) where {T<:AbstractObject}
 #     @unpack mass, position, velocity = obj

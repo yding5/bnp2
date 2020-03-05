@@ -2,7 +2,9 @@ name = "BNP2"
 
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
+AutoGrad = "6710c13c-97f1-543f-91c5-74e8f7d95b35"
 CoordinateTransformations = "150eb455-5306-5404-9cee-2592286d6298"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 ImageMagick = "6218d12a-5da1-5696-b52f-db25d2ecc6d1"

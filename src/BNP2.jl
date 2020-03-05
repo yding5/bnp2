@@ -21,14 +21,16 @@ end
 
 ### Utilites
 
-_tolist(d::Int, v) = [v[i:i+d-1] for i in 1:d:length(v)]
+_tolist(d::Int, v::AbstractVector) = [v[i:i+d-1] for i in 1:d:length(v)]
+_tolist(d::Int, m::AbstractMatrix) = [m[:,i:i+d-1] for i in 1:d:size(m, 2)]
 _tolist(d::Int, ::Nothing) = nothing
 
 include("laws.jl")
 include("world.jl")
-export AbstractObject, massof, positionof, velocityof, Particle, Bar
-export AbstractForce, Force, forceof
-export AbstractEnvironment, stateof, accelerationof, Space, Earth
+export AbstractObject, massof, stateof, positionof, velocityof, dimensionof, forceof
+export Forced, Particle, Bar
+export AbstractEnvironment, stateof, accelerationof
+export Space, WithStatic
 include("simulators.jl")
 export AbstractSimulator, simulate, transition, SimpleSimulator, DiffEqSimulator, PymunkSimulator
 include("vis.jl")

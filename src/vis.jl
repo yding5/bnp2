@@ -141,14 +141,20 @@ function animof(env::AbstractEnvironment, sim::DiffEqSimulator, n_frames; kwargs
     return animof(hcat(ps...), hcat(vs...); kwargs...)
 end
 
+animof(envs::AbstractVector{<:AbstractEnvironment}; kwargs...) = animof(hcat(positionof.(envs)...); kwargs...)
 animof(qs::AbstractVector{<:AbstractVector}; kwargs...) = animof(hcat(qs...); kwargs...)
 function animof(Q::AbstractMatrix, P=nothing; d=2, kwargs...)
     @argcheck d == 2
     n = div(size(Q, 1), d)
     ms = fill(nothing, n)
 
+    if size(Q, 1) > d
+        dev = max(3maximum(std(Q[1:2:end,:]; dims=1)), 3maximum(std(Q[2:2:end,:]; dims=1)))
+    else
+        dev = max(3maximum(std(Q[1,:])), 3maximum(std(Q[2,:])))
+    end
+
     fig, ax = plt.subplots(figsize=(5, 5))
-    dev = max(3maximum(std(Q[1:2:end,:]; dims=1)), 3maximum(std(Q[2:2:end,:]; dims=1)))
     
     init!() = ax.clear()
     
