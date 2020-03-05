@@ -2,8 +2,6 @@
 
 abstract type AbstractObject end
 
-forceof(::AbstractObject) = nothing
-
 """Particle"""
 struct Particle{D, M, S} <: AbstractObject
     mass::M     # (kg)
@@ -35,20 +33,13 @@ function Base.Broadcast.broadcasted(
     return Particle.(ms, _tolist.(div(length(ps), length(ms)), (ps, vs))...)
 end
 
-"""Forced"""
-struct Forced{O, F} <: AbstractObject
-    object::O
-    f::F
+function forceof(p1::Particle, p2::Particle)
+    p1 === p2 && return nothing
+    Δp = positionof(p2) - positionof(p1)
+    r² = sum(abs2, Δp)
+    u = Δp / sqrt(r²)
+    return attractive_force(p1.mass, p2.mass, r²) * u
 end
-
-massof(f::Forced) = massof(f.object)
-stateof(f::Forced) = stateof(f.object)
-positionof(f::Forced) = positionof(f.object)
-velocityof(f::Forced) = velocityof(f.object)
-dimensionof(f::Forced) = dimensionof(f.object)
-forceof(f::Forced) = f.f
-
-reconstruct(f::Forced, args...) = Forced(reconstruct(f.object, args...), f.f)
 
 """Bar"""
 struct Bar{T1, T2} <: AbstractObject
@@ -60,79 +51,108 @@ end
 
 Bar(pstart, pend) = Bar(pstart, pend, 0.3, 0.9)
 
-function pymunkobj(body, bar::Bar)
-    v = bar.pstart - bar.pend
-    u = orthonormalvecof(v) * bar.tickness / 2
-    obj = pymunk.Poly(body, [bar.pstart - u, bar.pstart + u, bar.pend + u, bar.pend - u])
-    obj.elasticity = bar.elasticity
-    return obj
-end
+# """GravitationalField"""
+# struct GravitationalField{S} <: AbstractObject
+#     strength::S
+# end
 
 ### Environment
 
 abstract type AbstractEnvironment end
 
-"""Space"""
-struct Space{O<:Tuple, A} <: AbstractEnvironment
-    objects::O
-    acceleration::A
+stateof(env::AbstractEnvironment) = hcat(stateof.(objectsof(env))...)
+positionof(env::AbstractEnvironment) = vcat(positionof.(objectsof(env))...)
+velocityof(env::AbstractEnvironment) = vcat(velocityof.(objectsof(env))...)
+dimensionof(env::AbstractEnvironment) = dimensionof(first(objectsof(env)))
+function accelerationof(env::AbstractEnvironment, i::Int)
+    d = dimensionof(env)
+    return accelerationof(env)[(i-1)*d+1:i*d]
 end
 
-stateof(s::Space) = hcat(stateof.(s.objects)...)
-positionof(s::Space) = vcat(positionof.(s.objects)...)
-velocityof(s::Space) = vcat(velocityof.(s.objects)...)
-dimensionof(s::Space) = dimensionof(first(s.objects))
-objectsof(s::Space) = s.objects
-accelerationof(s::Space) = s.acceleration
+abstract type AbstractWithEnvironment <: AbstractEnvironment end
 
+envof(w::AbstractWithEnvironment) = w.env
+objectsof(w::AbstractWithEnvironment) = objectsof(envof(w))
+accelerationof(w::AbstractWithEnvironment) = accelerationof(envof(w)) + w._cache
+
+"""WithForce"""
+struct WithForce{
+    E<:AbstractEnvironment, F<:Dict{Int, <:AbstractVector}, C
+} <: AbstractWithEnvironment
+    env::E
+    forces::F
+    _cache::C
+end
+
+forceof(wf::WithForce) = wf.forces
+
+WithForce(env, forces::Pair...) = WithForce(env, Dict(forces...))
+function WithForce(env, forces::Dict)
+    _cache = acceleration_by_external(objectsof(env), forces)
+    return WithForce(env, forces, _cache)
+end
+
+function acceleration_by_external(objects, forces)
+    as = []
+    for (i, o) in enumerate(objects)
+        a = i in keys(forces) ? forces[i] / massof(o) : zeros(dimensionof(o))
+        push!(as, a)
+    end
+    return vcat(as...)
+end
+
+reconstruct(wf::WithForce, args...) = WithForce(reconstruct(envof(wf), args...), wf.forces)
+
+"""WithStatic"""
+struct WithStatic{E<:AbstractEnvironment, S, C} <: AbstractWithEnvironment
+    env::E
+    static::S
+    _cache::C
+end
+
+function WithStatic(env, static)
+    _cache = zeros(length(objectsof(env)) * dimensionof(env))
+    return WithStatic(env, static, _cache)
+end
+
+staticof(ws::WithStatic) = ws.static
+
+reconstruct(ws::WithStatic, args...) = WithStatic(reconstruct(envof(ws), args...), ws.static)
+
+"""Space"""
+struct Space{O<:Tuple, C} <: AbstractEnvironment
+    objects::O
+    _cache::C
+end
+
+objectsof(s::Space) = s.objects
+accelerationof(s::Space) = s._cache
+
+Space(o::AbstractObject, args...) = Space(tuple(o), args...)
 Space(os::AbstractVector, args...) = Space(tuple(os...), args...)
 function Space(os::Tuple)
     @argcheck all(dimensionof(first(os)) .== dimensionof.(os))
-    return Space(os, acceleration_by_interaction(os))
+    _cache = acceleration_by_interaction(os)
+    return Space(os, _cache)
 end
 
-forceadd(::Nothing, f2) = f2
-forceadd(f1, ::Nothing) = f1
-forceadd(f1, f2) = f1 + f2
-
+acceleration_by_interaction(os::NTuple{1}) = zeros(dimensionof(first(os)))
 function acceleration_by_interaction(objects::Tuple)
-    fs = []
+    as = []
     for o1 in objects
         objects′ = filter(o2 -> !(o1 === o2), objects)
         if length(objects′) > 0
             f1 = mapreduce(o2 -> forceof(o1, o2), +, objects′)
         else
-            f1 = nothing
+            f1 = zeros(dimensionof(o1))
         end
-        push!(fs, forceadd(f1, forceof(o1)) / massof(o1))
+        push!(as, f1 / massof(o1))
     end
-    return vcat(fs...)
+    return vcat(as...)
 end
 
 reconstruct(s::Space, objects) = Space(objects)
 reconstruct(s::Space, states::AbstractMatrix) = 
-    Space(reconstruct.(s.objects, _tolist(dimensionof(s), states)))
+    Space(reconstruct.(objectsof(s), _tolist(dimensionof(s), states)))
 reconstruct(s::Space, ps::AbstractVector{<:Real}, vs=nothing) = 
-    Space(reconstruct.(s.objects, _tolist.(dimensionof(s), (ps, vs))...))
-
-"""WithStatic"""
-struct WithStatic{S<:AbstractEnvironment, F} <: AbstractEnvironment
-    space::S
-    static::F
-end
-
-### Force
-
-function forceof(p1::Particle, p2::Particle)
-    p1 === p2 && return nothing
-    Δp = positionof(p2) - positionof(p1)
-    r² = sum(abs2, Δp)
-    u = Δp / sqrt(r²)
-    return attractive_force(p1.mass, p2.mass, r²) * u
-end
-
-abstract type AbstractForce end
-
-struct Force{V<:AbstractVector{<:Real}} <: AbstractForce
-    F::V
-end
+    Space(reconstruct.(objectsof(s), _tolist.(dimensionof(s), (ps, vs))...))

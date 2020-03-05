@@ -32,10 +32,10 @@ end
 
 include("laws.jl")
 include("world.jl")
-export AbstractObject, massof, stateof, positionof, velocityof, dimensionof, forceof
-export Forced, Particle, Bar
-export AbstractEnvironment, objectsof, accelerationof
-export Space, WithStatic
+export AbstractObject, massof, stateof, positionof, velocityof, dimensionof
+export Particle, Bar
+export AbstractEnvironment, envof, forceof, staticof, objectsof, accelerationof
+export Space, WithForce, WithStatic
 include("simulators.jl")
 export AbstractSimulator, simulate, transition, SimpleSimulator, DiffEqSimulator, PymunkSimulator
 include("vis.jl")

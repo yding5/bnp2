@@ -143,7 +143,7 @@ end
 
 animof(envs::AbstractVector{<:AbstractEnvironment}; kwargs...) = animof(hcat(positionof.(envs)...); kwargs...)
 animof(qs::AbstractVector{<:AbstractVector}; kwargs...) = animof(hcat(qs...); kwargs...)
-function animof(Q::AbstractMatrix, P=nothing; d=2, kwargs...)
+function animof(Q::AbstractMatrix, P=nothing; d=2, do_tracklocal=true, kwargs...)
     @argcheck d == 2
     n = div(size(Q, 1), d)
     ms = fill(nothing, n)
@@ -153,6 +153,7 @@ function animof(Q::AbstractMatrix, P=nothing; d=2, kwargs...)
     else
         dev = max(3maximum(std(Q[1,:])), 3maximum(std(Q[2,:])))
     end
+    xmid_global, ymid_global = mean(Q[1:2:end,:]), mean(Q[2:2:end,:])
 
     fig, ax = plt.subplots(figsize=(5, 5))
     
@@ -161,7 +162,11 @@ function animof(Q::AbstractMatrix, P=nothing; d=2, kwargs...)
     function draw!(t)
         ax.clear()
         xs, ys = Q[1:2:end,t], Q[2:2:end,t]
-        xmid, ymid = mean(xs), mean(ys)
+        if do_tracklocal
+            xmid, ymid = mean(xs), mean(ys)
+        else
+            xmid, ymid = xmid_global, ymid_global
+        end
         ax.set_xlim([xmid - dev, xmid + dev])
         ax.set_ylim([ymid - dev, ymid + dev])
         for i in 1:n

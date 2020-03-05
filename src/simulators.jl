@@ -1,5 +1,8 @@
 abstract type AbstractSimulator end
 
+transition(env::AbstractEnvironment, dt::AbstractFloat) = transition(env, SimpleSimulator(dt))
+simulate(env::AbstractEnvironment, dt::AbstractFloat, n_steps::Int) = simulate(env, SimpleSimulator(dt), n_steps)
+
 function simulate(env::T, sim::AbstractSimulator, n_steps::Int) where {T<:AbstractEnvironment}
     traj = Vector{T}(undef, n_steps)
     for i in 1:n_steps
@@ -7,9 +10,6 @@ function simulate(env::T, sim::AbstractSimulator, n_steps::Int) where {T<:Abstra
     end
     return traj
 end
-
-transition(env::AbstractEnvironment, dt::AbstractFloat) = transition(env, SimpleSimulator(dt))
-simulate(env::AbstractEnvironment, dt::AbstractFloat, n_steps::Int) = simulate(env, SimpleSimulator(dt), n_steps)
 
 ### Simple
 
@@ -19,10 +19,16 @@ end
 
 function transition(env::AbstractEnvironment, sim::SimpleSimulator)
     q, p = positionof(env), velocityof(env)
-    p += sim.dt / 2 * accelerationof(env)
+    acc = accelerationof(env)
+    if !isnothing(acc)
+        p += sim.dt / 2 * acc
+    end
     q += sim.dt * p
     env = reconstruct(env, q, p)
-    p += sim.dt / 2 * accelerationof(env)
+    acc = accelerationof(env)
+    if !isnothing(acc)
+        p += sim.dt / 2 * acc
+    end
     return reconstruct(env, q, p)
 end
 
@@ -63,19 +69,41 @@ struct PymunkSimulator{T} <: AbstractSimulator
     dt::T
 end
 
+function pymunkobj(p::Particle)
+    radius = 0.25
+    elasticity = 0.9
+    mass = massof(p)
+    inertia = pymunk.moment_for_circle(mass, 0, radius, (0, 0))
+    body = pymunk.Body(mass, inertia)
+    body.position = positionof(p)
+    body.velocity = velocityof(p)
+    shape = pymunk.Circle(body, radius, (0, 0))
+    shape.elasticity = elasticity
+    return body, shape
+end
+
+function pymunkobj(bar::Bar)
+    body_static = pymunk.Body(body_type=pymunk.Body.STATIC)
+    v = bar.pstart - bar.pend
+    u = orthonormalvecof(v) * bar.tickness / 2
+    shape = pymunk.Poly(body_static, [bar.pstart - u, bar.pstart + u, bar.pend + u, bar.pend - u])
+    shape.elasticity = bar.elasticity
+    return shape
+end
+
 function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
     objects = objectsof(env)
     space = pymunk.Space()
-    radius = 0.25
-    for obj in objects
-        m = massof(obj)
-        inertia = pymunk.moment_for_circle(m, 0, radius, (0, 0))
-        body = pymunk.Body(m, inertia)
-        body.position = positionof(obj)
-        body.velocity = velocityof(obj)
-        shape = pymunk.Circle(body, radius, (0, 0))
-        body.apply_force_at_world_point(force=tuple(forceof(obj)...), point=(0, 0))
+    for (i, obj) in enumerate(objects)
+        body, shape = pymunkobj(obj)
+        f = massof(obj) * accelerationof(env, i)
+        body.apply_force_at_world_point(force=tuple(f...), point=(0, 0))
         space.add(body, shape)
+    end
+    if env isa WithStatic
+        for static in staticof(env)
+            space.add(pymunkobj(static))
+        end
     end
     space.step(sim.dt)
     objects = map(1:length(objectsof(env))) do i
@@ -85,38 +113,3 @@ function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
     end
     return reconstruct(env, objects)
 end
-
-# function simulate(obj::T, env::EarthWithObjects, sim::PymunkSimulator, n_steps::Int) where {T<:AbstractObject}
-#     @unpack mass, position, velocity = obj
-#     @unpack dt = sim
-
-#     space = pymunk.Space()
-#     space.gravity = (0.0, -g)
-#     radius = 0.5
-#     inertia = pymunk.moment_for_circle(mass, 0, radius, (0, 0))
-#     body = pymunk.Body(mass, inertia)
-#     body.position = position
-#     body.velocity = velocity
-#     shape = pymunk.Circle(body, radius, (0, 0))
-#     shape.elasticity = 0.9
-#     space.add(body, shape)
-    
-#     body_static = pymunk.Body(body_type=pymunk.Body.STATIC)
-#     for obj in env.objs
-#         space.add(pymunkobj(body_static, obj))
-#     end
-    
-#     n_steps == 0 && return (space, sim)
-
-#     traj = []
-#     for t in 1:n_steps
-#         space.step(dt)
-#         position = [get.(Ref(space.shapes[1].body.position), 0:1)...]
-#         velocity = [get.(Ref(space.shapes[1].body.velocity), 0:1)...]
-#         push!(traj, Particle(mass, position, velocity))
-#     end
-    
-#     return Vector{typeof(first(traj))}(traj)
-# end
-
-;

@@ -2,7 +2,7 @@ using DrWatson
 @quickactivate "BNP2"
 using Test, BNP2
 
-@testset "AbstractObject" begin
+@testset "World" begin
     dim = 2
     mass = 1.0
     state = randn(2, dim)
@@ -46,7 +46,9 @@ using Test, BNP2
         fps = Forced.(Particle.(ms, states), Ref(f))
     end
     @testset "Space" begin
-        objs =  Particle.(ms, states)
+        obj = Particle(mass, state)
+        Space(obj)
+        objs = Particle.(ms, states)
         space = Space(objs)
         @test states == stateof(space)
         @test ps == positionof(space)
