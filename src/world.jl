@@ -21,15 +21,11 @@ Particle(mass, p::AbstractVector, ::Nothing) = Particle(mass, p)
 Particle(mass, p::T, v::T) where {T<:AbstractVector} = Particle(mass, vcat(p', v'))
 reconstruct(p::Particle, args...) = Particle(p.mass, args...)
 
-function Base.Broadcast.broadcasted(
-    ::typeof(Particle), ms::AbstractVector, states::AbstractMatrix
-)
+function Base.Broadcast.broadcasted(::typeof(Particle), ms::AbstractVector, states::AbstractMatrix)
     return Particle.(ms, _tolist(div(size(states, 2), length(ms)), states))
 end
 
-function Base.Broadcast.broadcasted(
-    ::typeof(Particle), ms::AbstractVector, ps::AbstractVector{<:Real}, vs=nothing
-)
+function Base.Broadcast.broadcasted(::typeof(Particle), ms::AbstractVector, ps::AbstractVector{<:Real}, vs=nothing)
     return Particle.(ms, _tolist.(div(length(ps), length(ms)), (ps, vs))...)
 end
 
@@ -38,7 +34,7 @@ function forceof(p1::Particle, p2::Particle)
     Δp = positionof(p2) - positionof(p1)
     r² = sum(abs2, Δp)
     u = Δp / sqrt(r²)
-    return attractive_force(p1.mass, p2.mass, r²) * u
+    return attractive_force(massof(p1), massof(p2), r²) * u
 end
 
 """Bar"""
@@ -51,10 +47,18 @@ end
 
 Bar(pstart, pend) = Bar(pstart, pend, 0.3, 0.9)
 
-# """GravitationalField"""
-# struct GravitationalField{S} <: AbstractObject
-#     strength::S
-# end
+"""GravitationalField"""
+struct GravitationalField{D, S} <: AbstractObject
+    direction::D
+    strength::S
+end
+
+function forceof(p::Particle, f::GravitationalField)
+    u = f.direction / sqrt(sum(abs2, f.direction))
+    return massof(p) * f.strength * u
+end
+
+const EARTH = GravitationalField([0, -1], g)
 
 ### Environment
 
@@ -94,8 +98,8 @@ end
 
 function acceleration_by_external(objects, forces)
     as = []
-    for (i, o) in enumerate(objects)
-        a = i in keys(forces) ? forces[i] / massof(o) : zeros(dimensionof(o))
+    for (i, obj) in enumerate(objects)
+        a = i in keys(forces) ? forces[i] / massof(obj) : zeros(dimensionof(obj))
         push!(as, a)
     end
     return vcat(as...)
@@ -110,8 +114,19 @@ struct WithStatic{E<:AbstractEnvironment, S, C} <: AbstractWithEnvironment
     _cache::C
 end
 
+WithStatic(env, static::AbstractObject) = WithStatic(env, tuple(static))
 function WithStatic(env, static)
-    _cache = zeros(length(objectsof(env)) * dimensionof(env))
+    as = []
+    for obj in objectsof(env)
+        a = zeros(dimensionof(obj))
+        for s in static
+            if s isa GravitationalField
+                a += forceof(obj, s) / massof(obj)
+            end
+        end
+        push!(as, a)
+    end
+    _cache = vcat(as...)
     return WithStatic(env, static, _cache)
 end
 
@@ -128,15 +143,15 @@ end
 objectsof(s::Space) = s.objects
 accelerationof(s::Space) = s._cache
 
-Space(o::AbstractObject, args...) = Space(tuple(o), args...)
-Space(os::AbstractVector, args...) = Space(tuple(os...), args...)
-function Space(os::Tuple)
-    @argcheck all(dimensionof(first(os)) .== dimensionof.(os))
-    _cache = acceleration_by_interaction(os)
-    return Space(os, _cache)
+Space(obj::AbstractObject, args...) = Space(tuple(obj), args...)
+Space(objs::AbstractVector, args...) = Space(tuple(objs...), args...)
+function Space(objs::Tuple)
+    @argcheck all(dimensionof(first(objs)) .== dimensionof.(objs))
+    _cache = acceleration_by_interaction(objs)
+    return Space(objs, _cache)
 end
 
-acceleration_by_interaction(os::NTuple{1}) = zeros(dimensionof(first(os)))
+acceleration_by_interaction(objs::NTuple{1}) = zeros(dimensionof(first(objs)))
 function acceleration_by_interaction(objects::Tuple)
     as = []
     for o1 in objects

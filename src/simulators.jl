@@ -69,6 +69,8 @@ struct PymunkSimulator{T} <: AbstractSimulator
     dt::T
 end
 
+pymunkobj(::AbstractObject) = nothing
+
 function pymunkobj(p::Particle)
     radius = 0.25
     elasticity = 0.9
@@ -102,7 +104,10 @@ function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
     end
     if env isa WithStatic
         for static in staticof(env)
-            space.add(pymunkobj(static))
+            obj = pymunkobj(static)
+            if !isnothing(obj)
+                space.add(obj)
+            end
         end
     end
     space.step(sim.dt)

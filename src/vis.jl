@@ -53,7 +53,7 @@ end
 
 function Plots.plot!(ax, p::Particle{2}; color="#E24A33", alpha=1.0, do_plotvelocity=false)
     position, velocity = positionof(p), velocityof(p)
-    ax.scatter([position[1]], [position[2]], color=color, alpha=alpha)
+    ax.scatter([position[1]], [position[2]]; color=color, alpha=alpha, linewidths=2.5)
     if do_plotvelocity && norm(velocity) > 0
         ax.arrow(
             position..., velocity...; 
@@ -62,10 +62,23 @@ function Plots.plot!(ax, p::Particle{2}; color="#E24A33", alpha=1.0, do_plotvelo
     end
 end
 
+function Plots.plot!(ax, env::AbstractEnvironment)
+    for obj in objectsof(env)
+        plot!(ax, obj)
+    end
+    for s in staticof(env)
+        plot!(ax, s)
+    end
+end
+
+function Plots.plot!(ax, bar::Bar)
+    ax.plot([bar.pstart[1], bar.pend[1]], [bar.pstart[2], bar.pend[2]]; linewidth=20bar.tickness, color="#777777")
+end
+
 function plot_force!(ax, p, f)
     f = f / 0.1e12 # trillion Newton
     ax.arrow(
-        p.position..., f...; 
+        positionof(p)..., f...; 
         shape="left", width=arrowwidthof(ax), color="#988ED5", alpha=0.5
     )
 end
