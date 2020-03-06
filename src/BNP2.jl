@@ -33,13 +33,20 @@ end
 const G = CODATA2018.NewtonianConstantOfGravitation.val
 const g = CODATA2014.StandardAccelerationOfGravitation.val
 
-attractive_force(m1, m2, r²) = G * m1 * m2 / r²
+attractive_acceleration(m, r²) = G * m / r²
+attractive_force(m1, m2, r²) = m1 * attractive_acceleration(m2, r²)
+
+function add_gaussiannoise(states::AbstractVector{<:AbstractVector}, sigma)
+    return states .+ sigma .* randn.(size.(states))
+end
+
+export add_gaussiannoise
 
 include("world.jl")
 export AbstractObject, massof, stateof, positionof, velocityof, dimensionof
-export Particle, Bar, GravitationalField, EARTH
+export Particle, Forced, Bar, GravitationalField, EARTH
 export AbstractEnvironment, envof, forceof, staticof, objectsof, accelerationof
-export Space, WithForce, WithStatic
+export Space, WithStatic
 include("simulators.jl")
 export AbstractSimulator, simulate, transition, SimpleSimulator, DiffEqSimulator, PymunkSimulator
 include("vis.jl")

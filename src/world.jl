@@ -2,6 +2,9 @@
 
 abstract type AbstractObject end
 
+objectof(obj::AbstractObject) = obj
+forceof(obj1, obj2) = massof(obj1) * accelerationof(o1, obj2)
+
 """Particle"""
 struct Particle{D, M, S} <: AbstractObject
     mass::M     # (kg)
@@ -29,13 +32,30 @@ function Base.Broadcast.broadcasted(::typeof(Particle), ms::AbstractVector, ps::
     return Particle.(ms, _tolist.(div(length(ps), length(ms)), (ps, vs))...)
 end
 
-function forceof(p1::Particle, p2::Particle)
-    p1 === p2 && return nothing
-    Δp = positionof(p2) - positionof(p1)
+function accelerationof(p::Particle, obj::AbstractObject)
+    p === obj && return nothing
+    Δp = positionof(obj) - positionof(p)
     r² = sum(abs2, Δp)
     u = Δp / sqrt(r²)
-    return attractive_force(massof(p1), massof(p2), r²) * u
+    return attractive_acceleration(massof(obj), r²) * u
 end
+
+"""Forced"""
+struct Forced{O<:AbstractObject, F} <: AbstractObject
+    obj::O
+    force::F
+end
+
+objectof(f::Forced) = f.obj
+massof(f::Forced) = massof(f.obj)
+stateof(f::Forced) = stateof(f.obj)
+positionof(f::Forced) = positionof(f.obj)
+velocityof(f::Forced) = velocityof(f.obj)
+dimensionof(f::Forced) = dimensionof(f.obj)
+
+reconstruct(f::Forced, args...) = Forced(reconstruct(f.obj, args...), f.force)
+
+accelerationof(f::Forced) = f.force / massof(f.obj)
 
 """Bar"""
 struct Bar{T1, T2} <: AbstractObject
@@ -53,9 +73,9 @@ struct GravitationalField{D, S} <: AbstractObject
     strength::S
 end
 
-function forceof(p::Particle, f::GravitationalField)
+function accelerationof(::AbstractObject, f::GravitationalField)
     u = f.direction / sqrt(sum(abs2, f.direction))
-    return massof(p) * f.strength * u
+    return f.strength * u
 end
 
 const EARTH = GravitationalField([0, -1], g)
@@ -72,65 +92,34 @@ function accelerationof(env::AbstractEnvironment, i::Int)
     d = dimensionof(env)
     return accelerationof(env)[(i-1)*d+1:i*d]
 end
-
-abstract type AbstractWithEnvironment <: AbstractEnvironment end
-
-envof(w::AbstractWithEnvironment) = w.env
-objectsof(w::AbstractWithEnvironment) = objectsof(envof(w))
-accelerationof(w::AbstractWithEnvironment) = accelerationof(envof(w)) + w._cache
-
-"""WithForce"""
-struct WithForce{
-    E<:AbstractEnvironment, F<:Dict{Int, <:AbstractVector}, C
-} <: AbstractWithEnvironment
-    env::E
-    forces::F
-    _cache::C
-end
-
-forceof(wf::WithForce) = wf.forces
-
-WithForce(env, forces::Pair...) = WithForce(env, Dict(forces...))
-function WithForce(env, forces::Dict)
-    _cache = acceleration_by_external(objectsof(env), forces)
-    return WithForce(env, forces, _cache)
-end
-
-function acceleration_by_external(objects, forces)
-    as = []
-    for (i, obj) in enumerate(objects)
-        a = i in keys(forces) ? forces[i] / massof(obj) : zeros(dimensionof(obj))
-        push!(as, a)
-    end
-    return vcat(as...)
-end
-
-reconstruct(wf::WithForce, args...) = WithForce(reconstruct(envof(wf), args...), wf.forces)
+staticof(env::AbstractEnvironment) = staticof(envof(env))
 
 """WithStatic"""
-struct WithStatic{E<:AbstractEnvironment, S, C} <: AbstractWithEnvironment
+struct WithStatic{E<:AbstractEnvironment, S, C} <: AbstractEnvironment
     env::E
     static::S
     _cache::C
 end
 
+envof(w::WithStatic) = w.env
+objectsof(w::WithStatic) = objectsof(w.env)
+accelerationof(w::WithStatic) = accelerationof(w.env) + w._cache
+staticof(ws::WithStatic) = ws.static
+
 WithStatic(env, static::AbstractObject) = WithStatic(env, tuple(static))
 function WithStatic(env, static)
-    as = []
-    for obj in objectsof(env)
+    as = map(objectsof(env)) do obj
         a = zeros(dimensionof(obj))
         for s in static
             if s isa GravitationalField
-                a += forceof(obj, s) / massof(obj)
+                a += accelerationof(obj, s)
             end
         end
-        push!(as, a)
+        a
     end
     _cache = vcat(as...)
     return WithStatic(env, static, _cache)
 end
-
-staticof(ws::WithStatic) = ws.static
 
 reconstruct(ws::WithStatic, args...) = WithStatic(reconstruct(envof(ws), args...), ws.static)
 
@@ -140,8 +129,10 @@ struct Space{O<:Tuple, C} <: AbstractEnvironment
     _cache::C
 end
 
+envof(s::Space) = s
 objectsof(s::Space) = s.objects
 accelerationof(s::Space) = s._cache
+staticof(s::Space) = tuple()
 
 Space(obj::AbstractObject, args...) = Space(tuple(obj), args...)
 Space(objs::AbstractVector, args...) = Space(tuple(objs...), args...)
@@ -151,17 +142,18 @@ function Space(objs::Tuple)
     return Space(objs, _cache)
 end
 
-acceleration_by_interaction(objs::NTuple{1}) = zeros(dimensionof(first(objs)))
+acceleration_by_interaction(objs::NTuple{1,<:Particle}) = zeros(dimensionof(first(objs)))
+acceleration_by_interaction(objs::NTuple{1,<:Forced}) = accelerationof(first(objs))
 function acceleration_by_interaction(objects::Tuple)
-    as = []
-    for o1 in objects
-        objects′ = filter(o2 -> !(o1 === o2), objects)
+    as = map(objects) do obj1
+        objects′ = filter(obj2 -> !(obj1 === obj2), objects)
+        a = zeros(dimensionof(obj1))
         if length(objects′) > 0
-            f1 = mapreduce(o2 -> forceof(o1, o2), +, objects′)
-        else
-            f1 = zeros(dimensionof(o1))
+            for obj2 in objects′
+                a += accelerationof(obj1, obj2)
+            end
         end
-        push!(as, f1 / massof(o1))
+        obj1 isa Forced ? a + accelerationof(obj1) : a
     end
     return vcat(as...)
 end
@@ -169,5 +161,34 @@ end
 reconstruct(s::Space, objects) = Space(objects)
 reconstruct(s::Space, states::AbstractMatrix) = 
     Space(reconstruct.(objectsof(s), _tolist(dimensionof(s), states)))
-reconstruct(s::Space, ps::AbstractVector{<:Real}, vs=nothing) = 
-    Space(reconstruct.(objectsof(s), _tolist.(dimensionof(s), (ps, vs))...))
+function reconstruct(s::Space, pvec::AbstractVector{<:Real}, vvec::AbstractVector{<:Real})
+    objs = objectsof(s)
+    ps = _tolist(dimensionof(s), pvec)
+    vs = _tolist(dimensionof(s), vvec)
+    return Space([reconstruct(objs[i], ps[i], vs[i]) for i in 1:length(objs)])
+end
+
+
+# """WithForce"""
+# struct WithForce{
+#     E<:AbstractEnvironment, F<:Dict{Int, <:AbstractVector}, C
+# } <: AbstractEnvironment
+#     env::E
+#     forces::F
+#     _cache::C
+# end
+
+# WithForce(env, forces::Pair...) = WithForce(env, Dict(forces...))
+# function WithForce(env, forces::Dict)
+#     _cache = acceleration_by_external(objectsof(env), forces)
+#     return WithForce(env, forces, _cache)
+# end
+
+# function acceleration_by_external(objects, forces)
+#     as = map(1:length(objects)) do i
+#         i in keys(forces) ? forces[i] / massof(objects[i]) : zeros(dimensionof(objects[i]))
+#     end
+#     return vcat(as...)
+# end
+
+# reconstruct(wf::WithForce, args...) = WithForce(reconstruct(envof(wf), args...), wf.forces)

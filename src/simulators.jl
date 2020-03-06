@@ -20,15 +20,11 @@ end
 function transition(env::AbstractEnvironment, sim::SimpleSimulator)
     q, p = positionof(env), velocityof(env)
     acc = accelerationof(env)
-    if !isnothing(acc)
-        p += sim.dt / 2 * acc
-    end
+    p += sim.dt / 2 * acc
     q += sim.dt * p
     env = reconstruct(env, q, p)
     acc = accelerationof(env)
-    if !isnothing(acc)
-        p += sim.dt / 2 * acc
-    end
+    p += sim.dt / 2 * acc
     return reconstruct(env, q, p)
 end
 
@@ -84,6 +80,8 @@ function pymunkobj(p::Particle)
     return body, shape
 end
 
+pymunkobj(f::Forced) = pymunkobj(f.obj)
+
 function pymunkobj(bar::Bar)
     body_static = pymunk.Body(body_type=pymunk.Body.STATIC)
     v = bar.pstart - bar.pend
@@ -102,12 +100,10 @@ function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
         body.apply_force_at_world_point(force=tuple(f...), point=(0, 0))
         space.add(body, shape)
     end
-    if env isa WithStatic
-        for static in staticof(env)
-            obj = pymunkobj(static)
-            if !isnothing(obj)
-                space.add(obj)
-            end
+    for static in staticof(env)
+        obj = pymunkobj(static)
+        if !isnothing(obj)
+            space.add(obj)
         end
     end
     space.step(sim.dt)
