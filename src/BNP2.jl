@@ -21,6 +21,12 @@ end
 
 ### Utilites
 
+const G = CODATA2018.NewtonianConstantOfGravitation.val
+const g = CODATA2014.StandardAccelerationOfGravitation.val
+
+attractive_acceleration(m, r²) = G * m / r²
+attractive_force(m1, m2, r²) = m1 * attractive_acceleration(m2, r²)
+
 _tolist(d::Int, v::AbstractVector) = [v[i:i+d-1] for i in 1:d:length(v)]
 _tolist(d::Int, m::AbstractMatrix) = [m[:,i:i+d-1] for i in 1:d:size(m, 2)]
 _tolist(d::Int, ::Nothing) = nothing
@@ -30,20 +36,23 @@ function orthonormalvecof(v::AbstractVector)
     return [v[2], -v[1]] / sqrt(sum(v.^2))
 end
 
-const G = CODATA2018.NewtonianConstantOfGravitation.val
-const g = CODATA2014.StandardAccelerationOfGravitation.val
-
-attractive_acceleration(m, r²) = G * m / r²
-attractive_force(m1, m2, r²) = m1 * attractive_acceleration(m2, r²)
+function rotate(θ, x)
+    # Rotation matrix
+    R = [
+        cos(θ) -sin(θ); 
+        sin(θ)  cos(θ)
+    ]
+    return R * x
+end
 
 function add_gaussiannoise(states::AbstractVector{<:AbstractVector}, sigma)
     return states .+ sigma .* randn.(size.(states))
 end
 
-export add_gaussiannoise
+export orthonormalvecof, rotate, add_gaussiannoise
 
 include("world.jl")
-export AbstractObject, massof, stateof, positionof, velocityof, dimensionof
+export AbstractObject, objectof, massof, stateof, positionof, velocityof, dimensionof
 export Particle, Forced, Bar, GravitationalField, EARTH
 export AbstractEnvironment, envof, forceof, staticof, objectsof, accelerationof
 export Space, WithStatic
