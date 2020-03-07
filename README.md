@@ -14,3 +14,8 @@
          - Here `YOUR_PYTHON_PATH` is the Python environment that you installed W&B
       2. `] build PyCall`
 3. Play with notebooks as usual
+
+### How to find your Python path
+
+1. Activate your virtual environment
+2. Do `which python`
