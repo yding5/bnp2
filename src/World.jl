@@ -1,3 +1,19 @@
+module World
+
+using Parameters, ArgCheck
+using PhysicalConstants: CODATA2014, CODATA2018
+import Parameters: reconstruct
+
+const G = CODATA2018.NewtonianConstantOfGravitation.val
+const g = CODATA2014.StandardAccelerationOfGravitation.val
+
+attractive_acceleration(m, r²) = G * m / r²
+attractive_force(m1, m2, r²) = m1 * attractive_acceleration(m2, r²)
+
+_tolist(d::Int, v::AbstractVector) = [v[i:i+d-1] for i in 1:d:length(v)]
+_tolist(d::Int, m::AbstractMatrix) = [m[:,i:i+d-1] for i in 1:d:size(m, 2)]
+_tolist(d::Int, ::Nothing) = nothing
+
 ### Object
 
 abstract type AbstractObject end
@@ -168,3 +184,10 @@ function reconstruct(s::Space, pvec::AbstractVector{<:Real}, vvec::AbstractVecto
     vs = _tolist(dim, vvec)
     return Space([reconstruct(objs[i], ps[i], vs[i]) for i in 1:length(objs)])
 end
+
+export AbstractObject, Particle, Forced, Bar, GravitationalField, EARTH
+export objectof, massof, stateof, positionof, velocityof, dimensionof
+export AbstractEnvironment, Space, WithStatic
+export envof, forceof, staticof, objectsof, accelerationof
+
+end # module

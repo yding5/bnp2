@@ -2,8 +2,6 @@ module BNP2
 
 using PyCall, LinearAlgebra, Statistics, ArgCheck, Reexport, FileIO, Images, LabelledArrays
 @reexport using Parameters, MLToolkit.Plots
-using PhysicalConstants: CODATA2014, CODATA2018
-import Parameters: reconstruct
 
 const cm = PyNULL()
 const colors = PyNULL()
@@ -21,16 +19,6 @@ end
 
 ### Utilites
 
-const G = CODATA2018.NewtonianConstantOfGravitation.val
-const g = CODATA2014.StandardAccelerationOfGravitation.val
-
-attractive_acceleration(m, r²) = G * m / r²
-attractive_force(m1, m2, r²) = m1 * attractive_acceleration(m2, r²)
-
-_tolist(d::Int, v::AbstractVector) = [v[i:i+d-1] for i in 1:d:length(v)]
-_tolist(d::Int, m::AbstractMatrix) = [m[:,i:i+d-1] for i in 1:d:size(m, 2)]
-_tolist(d::Int, ::Nothing) = nothing
-
 function orthonormalvecof(v::AbstractVector)
     @argcheck length(v) == 2
     return [v[2], -v[1]] / sqrt(sum(v.^2))
@@ -45,17 +33,31 @@ function rotate(θ, x)
     return R * x
 end
 
-function add_gaussiannoise(states::AbstractVector{<:AbstractVector}, sigma)
-    return states .+ sigma .* randn.(size.(states))
+export orthonormalvecof, rotate
+
+function apply_kernels(X)
+    return vcat(X, 1 ./ X, sin.(X), cos.(X))
 end
 
-export orthonormalvecof, rotate, add_gaussiannoise
+function euclidsq(X::T) where {T<:AbstractMatrix}
+    XiXj = transpose(X) * X
+    x² = sum(X.^2; dims=1)
+    return transpose(x²) .+ x² - 2XiXj
+end
 
-include("world.jl")
-export AbstractObject, objectof, massof, stateof, positionof, velocityof, dimensionof
-export Particle, Forced, Bar, GravitationalField, EARTH
-export AbstractEnvironment, envof, forceof, staticof, objectsof, accelerationof
-export Space, WithStatic
+function pairwise_compute(X)
+    dim = div(size(X, 1), 3)
+    X = cat([X[(i-1)*dim+1:i*dim,:] for i in 1:3]...; dims=3)
+    hs = map(1:size(X, 2)) do t
+        Xt = X[:,t,:]
+        Dt = euclidsq(Xt)
+        ht = sum(Dt; dims=2)
+    end
+    return hcat(hs...)
+end
+
+include("World.jl")
+@reexport using .World
 include("simulators.jl")
 export AbstractSimulator, simulate, transition, SimpleSimulator, DiffEqSimulator, PymunkSimulator
 include("vis.jl")
