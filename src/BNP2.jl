@@ -19,6 +19,8 @@ end
 
 ### Utilites
 
+using Random: AbstractRNG, GLOBAL_RNG
+
 function orthonormalvecof(v::AbstractVector)
     @argcheck length(v) == 2
     return [v[2], -v[1]] / sqrt(sum(v.^2))
@@ -33,28 +35,12 @@ function rotate(θ, x)
     return R * x
 end
 
-export orthonormalvecof, rotate
-
-function apply_kernels(X)
-    return vcat(X, 1 ./ X, sin.(X), cos.(X))
+add_gaussiannoise(xs, sigma) = add_gaussiannoise(GLOBAL_RNG, xs, sigma)
+function add_gaussiannoise(rng::AbstractRNG, xs::AbstractVector{<:AbstractVector}, sigma)
+    return map(x -> x + sigma * randn(size(x)...), xs)
 end
 
-function euclidsq(X::T) where {T<:AbstractMatrix}
-    XiXj = transpose(X) * X
-    x² = sum(X.^2; dims=1)
-    return transpose(x²) .+ x² - 2XiXj
-end
-
-function pairwise_compute(X)
-    dim = div(size(X, 1), 3)
-    X = cat([X[(i-1)*dim+1:i*dim,:] for i in 1:3]...; dims=3)
-    hs = map(1:size(X, 2)) do t
-        Xt = X[:,t,:]
-        Dt = euclidsq(Xt)
-        ht = sum(Dt; dims=2)
-    end
-    return hcat(hs...)
-end
+export orthonormalvecof, rotate, add_gaussiannoise
 
 include("World.jl")
 @reexport using .World
