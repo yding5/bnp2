@@ -1,38 +1,8 @@
 module Models
 
+include("Models/utilites.jl")
+
 using Flux, MLToolkit.Neural, MLToolkit.DistributionsX
-
-### Utilites
-
-l1of(x) = sum(abs.(x))
-l2of(x) = sum(x.^2)
-
-# L1 and L2 regularization
-l1regof(m) = sum(l1of, params(m)) / nparams(m)
-l2regof(m) = sum(l2of, params(m)) / nparams(m)
-
-function apply_kernels(X)
-    return vcat(X, 1 ./ X, sin.(X), cos.(X))
-end
-
-function euclidsq(X::T) where {T<:AbstractMatrix}
-    XiXj = transpose(X) * X
-    x² = sum(X.^2; dims=1)
-    return transpose(x²) .+ x² - 2XiXj
-end
-
-function pairwise_compute(X)
-    dim = div(size(X, 1), 3)
-    X = cat([X[(i-1)*dim+1:i*dim,:] for i in 1:3]...; dims=3)
-    hs = map(1:size(X, 2)) do t
-        Xt = X[:,t,:]
-        Dt = euclidsq(Xt)
-        ht = sum(Dt; dims=2)
-    end
-    return hcat(hs...)
-end
-
-### Models
 
 abstract type AbstractTransitionModel end
 
@@ -123,7 +93,7 @@ end
 
 Flux.@functor NeuralBodyForce
 
-function NeuralBodyForce(Hs::NTuple{N,Int}, E::Int, Δt::T, σ::T; n=3, d=2, act=relu) where {N, T<:Float32}
+function NeuralBodyForce(E::Int, Hs::NTuple{N,Int}, Δt::T, σ::T; n=3, d=2, act=relu) where {N, T<:Float32}
     D = d * n
     embedding = DenseNet(2d, Hs, E, act)
     f = DenseNet(E * n, Hs, d * n, act)
@@ -158,49 +128,76 @@ end
 
 Flux.@functor NeuralRelation
 
-function NeuralRelation(Hs::NTuple{N,Int}, E::Int, Δt::T, σ::T; n=3, d=2, act=relu) where {N, T<:Float32}
-    D = d * n
-    embedding = DenseNet(2d, Hs, E, act)
+function NeuralRelation(E::Int, Hs::NTuple{N,Int}, Δt::T, σ::T; n=3, d=2, act=relu) where {N, T<:Float32}
+    embedding = Dense(2d, E)
     relation = DenseNet(2E, Hs, d, act)
     return NeuralRelation(embedding, relation, Δt, [σ])
 end
 
-function merge_force(fs, n)
-    d, twonB = size(fs)                 # d, 2 * n * B
+"""
+    f = merge_force(pwf, n)
+
+Merge pairwise force `pwf` of shape (d, n * (n - 1) * B) into `f` of shape (d, n, B)
+by summing over the (n - 1) forces applied to each object.
+"""
+function merge_force(pwf, n)
+    d, twonB = size(pwf)                # d, n * (n - 1) * B
     B = div(twonB, 2n)
     f = cat(map(1:n) do i               # over n objects
         sum(map(n-1:-1:1) do j          # over n - 1 objects
             idx1 = (2i - j) * B + 1
             idx2 = (2i - j + 1) * B
-            f1 = fs[:,idx1:idx2]        # d, B
+            fij = pwf[:,idx1:idx2]      # d, B
         end)
     end...; dims=1)                     # d * n, B
     return reshape(f, d, n, :)          # d, n, B
 end
 
+"""
+    rangeexclude(n, i)
+
+Returns range `1:n` with `i` excluded.
+
+```julia
+rangeexclude(4, 2)  # => (1, 3, 4)
+```
+"""
+rangeexclude(n, i) = tuple((1:i-1)..., (i+1:n)...)
+
+"""
+    pwebd_i = cat_pairwise(ebd, i)
+
+Concat pairwise embeddings for element `i` in `ebd`,
+where `ebd` has a shape of (E, n, B) and 
+the 2nd dimension is assumed to be the element dimension.
+The returned `pwebd` has a shape of (2E, (n - 1) * B).
+"""
+function cat_pairwise(x, i)
+    n = size(x, 2)
+    return cat(map(
+        j -> cat(x[:,i,:], x[:,j,:]; dims=1),   # 2E, B
+        rangeexclude(n, i)                      # over (n - 1) other objects
+    )...; dims=2)
+end
+
 "Estimate force by state"
 function estforce(nbf::NeuralRelation, s)
-    twod, n = size(s)                           # 2d, n, B
+    twod, n = size(s)                       # 2d, n, B
     d = div(twod, 2)
-
-    s = reshape(s, twod, :)                     # 2d, n * B
-    ebd = nbf.embedding(s)                      # E, n * B
-    ebd = reshape(ebd, size(ebd, 1), n, :)      # E, n, B
-    
-    ebds = cat(                              
-        # Body 1
-        cat(ebd[:,1,:], ebd[:,2,:]; dims=1),    # 2E, B
-        cat(ebd[:,1,:], ebd[:,3,:]; dims=1),    # 2E, B
-        # Body 2
-        cat(ebd[:,2,:], ebd[:,1,:]; dims=1),    # 2E, B
-        cat(ebd[:,2,:], ebd[:,3,:]; dims=1),    # 2E, B
-        # Body 3
-        cat(ebd[:,3,:], ebd[:,1,:]; dims=1),    # 2E, B
-        cat(ebd[:,3,:], ebd[:,2,:]; dims=1),    # 2E, B
+    s = reshape(s, twod, :)                 # 2d, n * B
+    ebd = nbf.embedding(s)                  #  E, n * B
+    ebd = reshape(ebd, size(ebd, 1), n, :)  #  E, n, B
+    # Pairwise embedding
+    pwebd = cat(
+        map(
+            i -> cat_pairwise(ebd, i),      # 2E, (n - 1) * B
+            1:n                             # over n objects
+        )...; 
         dims=2
-    )                                           # 2E, 2B
-    fs = nbf.relation(ebds)                     # d, 2 * n * B
-    return merge_force(fs, n)                   # d, n, B
+    )                                       # 2E, n * (n - 1) * B
+    # Pairwise force by pairwise embedding
+    pwf = nbf.relation(pwebd)               #  d, n * (n - 1) * B
+    return merge_force(pwf, n)              #  d, n, B
 end
 
 transit(nbf::NeuralRelation, s) = leapfrog(nbf, s)
