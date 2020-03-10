@@ -37,7 +37,7 @@ end
 
 add_gaussiannoise(xs, sigma) = add_gaussiannoise(GLOBAL_RNG, xs, sigma)
 function add_gaussiannoise(rng::AbstractRNG, xs::AbstractVector{<:AbstractVector}, sigma)
-    return map(x -> x + sigma * randn(size(x)...), xs)
+    return map(x -> x + sigma * randn(rng, size(x)...), xs)
 end
 
 export orthonormalvecof, rotate, add_gaussiannoise
