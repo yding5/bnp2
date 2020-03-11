@@ -32,7 +32,7 @@ end
 """Particle"""
 struct Particle{D, M, S} <: AbstractObject
     mass::M     # (kg)
-    state::S    # position (m) & velocity (m^2 s^-1)
+    state::S    # position (m) & velocity (m s^-1)
 end
 
 massof(p::Particle) = p.mass
@@ -48,12 +48,23 @@ Particle(mass, p::AbstractVector, ::Nothing) = Particle(mass, p)
 Particle(mass, p::T, v::T) where {T<:AbstractVector} = Particle(mass, vcat(p', v'))
 reconstruct(p::Particle, args...) = Particle(p.mass, args...)
 
-function Base.Broadcast.broadcasted(::typeof(Particle), ms::AbstractVector, states::AbstractMatrix)
-    return Particle.(ms, _tolist(div(size(states, 2), length(ms)), states))
+function Base.Broadcast.broadcasted(
+    ::typeof(Particle),
+    ms::AbstractVector, states::AbstractArray{<:Real,3}
+)
+    n = length(ms)
+    states = [states[:,:,i] for i in 1:n]
+    return Particle.(ms, states)
 end
 
-function Base.Broadcast.broadcasted(::typeof(Particle), ms::AbstractVector, ps::AbstractVector{<:Real}, vs=nothing)
-    return Particle.(ms, _tolist.(div(length(ps), length(ms)), (ps, vs))...)
+function Base.Broadcast.broadcasted(
+    ::typeof(Particle), 
+    ms::AbstractVector, ps::AbstractMatrix, vs::Union{Nothing, AbstractMatrix}=nothing
+)
+    n = length(ms)
+    ps = [ps[:,i] for i in n]
+    vs = isnothing(vs) ? fill(nothing, n) : [vs[:,i] for i in n]
+    return Particle.(ms, ps, vs)
 end
 
 """Forced"""
@@ -177,11 +188,11 @@ end
 reconstruct(s::Space, objects) = Space(objects)
 reconstruct(s::Space, states::AbstractMatrix) = 
     Space(reconstruct.(objectsof(s), _tolist(dimensionof(s), states)))
-function reconstruct(s::Space, pvec::AbstractVector{<:Real}, vvec::AbstractVector{<:Real})
+function reconstruct(s::Space, pvec::T, vvec::Union{T, Nothing}=nothing) where {T<:AbstractVector{<:Real}}
     objs = objectsof(s)
     dim = dimensionof(s)
     ps = _tolist(dim, pvec)
-    vs = _tolist(dim, vvec)
+    vs = isnothing(vvec) ? fill(nothing, length(objs)) : _tolist(dim, vvec)
     return Space([reconstruct(objs[i], ps[i], vs[i]) for i in 1:length(objs)])
 end
 
