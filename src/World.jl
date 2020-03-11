@@ -1,33 +1,11 @@
-module World
-
 using Parameters, ArgCheck
-using PhysicalConstants: CODATA2014, CODATA2018
 import Parameters: reconstruct
-
-const G = CODATA2018.NewtonianConstantOfGravitation.val
-const g = CODATA2014.StandardAccelerationOfGravitation.val
-
-attractive_acceleration(m, r²) = G * m / r²
-attractive_force(m1, m2, r²) = m1 * attractive_acceleration(m2, r²)
-
-_tolist(d::Int, v::AbstractVector) = [v[i:i+d-1] for i in 1:d:length(v)]
-_tolist(d::Int, m::AbstractMatrix) = [m[:,i:i+d-1] for i in 1:d:size(m, 2)]
-_tolist(d::Int, ::Nothing) = nothing
 
 ### Object
 
 abstract type AbstractObject end
 
 objectof(obj::AbstractObject) = obj
-forceof(obj1, obj2) = massof(obj1) * accelerationof(obj1, obj2)
-
-function accelerationof(obj1::AbstractObject, obj2::AbstractObject)
-    obj1 === obj2 && return nothing
-    Δp = positionof(obj2) - positionof(obj1)
-    r² = sum(abs2, Δp)
-    u = Δp / sqrt(r²)
-    return attractive_acceleration(massof(obj2), r²) * u
-end
 
 """Particle"""
 struct Particle{D, M, S} <: AbstractObject
@@ -42,28 +20,26 @@ velocityof(p::Particle) = p.state[2,:]
 dimensionof(p::Particle{D}) where {D} = D
 
 Particle(m::M, s::S) where {M, S} = Particle{size(s, 2), M, S}(m, s)
-Particle(mass::T, dim::Int) where {T} = Particle(mass, zeros(T, 2, dim))
-Particle(mass, p::AbstractVector{T}) where {T} = Particle(mass, p, zeros(T, length(p)))
-Particle(mass, p::AbstractVector, ::Nothing) = Particle(mass, p)
-Particle(mass, p::T, v::T) where {T<:AbstractVector} = Particle(mass, vcat(p', v'))
+Particle(mass::T, D::Int) where {T} = Particle(mass, zeros(T, 2, D))
+Particle(mass, pos::AbstractVector{T}) where {T} = Particle(mass, pos, zeros(T, length(pos)))
+Particle(mass, pos::AbstractVector, ::Nothing) = Particle(mass, pos)
+Particle(mass, pos::T, vel::T) where {T<:AbstractVector} = Particle(mass, vcat(pos', vel'))
 reconstruct(p::Particle, args...) = Particle(p.mass, args...)
 
 function Base.Broadcast.broadcasted(
     ::typeof(Particle),
-    ms::AbstractVector, states::AbstractArray{<:Real,3}
+    ms::AbstractVector, S::AbstractArray{<:Real, 3}
 )
-    n = length(ms)
-    states = [states[:,:,i] for i in 1:n]
-    return Particle.(ms, states)
+    return Particle.(ms, [S[:,:,i] for i in 1:length(ms)])
 end
 
 function Base.Broadcast.broadcasted(
     ::typeof(Particle), 
-    ms::AbstractVector, ps::AbstractMatrix, vs::Union{Nothing, AbstractMatrix}=nothing
+    ms::AbstractVector, P::AbstractMatrix, V::Union{Nothing, AbstractMatrix}=nothing
 )
     n = length(ms)
-    ps = [ps[:,i] for i in n]
-    vs = isnothing(vs) ? fill(nothing, n) : [vs[:,i] for i in n]
+    ps = [P[:,i] for i in 1:n]
+    vs = isnothing(V) ? fill(nothing, n) : [V[:,i] for i in 1:n]
     return Particle.(ms, ps, vs)
 end
 
@@ -82,17 +58,15 @@ dimensionof(f::Forced) = dimensionof(f.obj)
 
 reconstruct(f::Forced, args...) = Forced(reconstruct(f.obj, args...), f.force)
 
-accelerationof(f::Forced) = f.force / massof(f.obj)
-
 """Bar"""
-struct Bar{T1, T2} <: AbstractObject
-    pstart::T1
-    pend::T1
-    tickness::T2
-    elasticity::T2
+struct Bar{P, T} <: AbstractObject
+    p1::P
+    p2::P
+    thickness::T
+    elasticity::T
 end
 
-Bar(pstart, pend) = Bar(pstart, pend, 0.3, 0.9)
+Bar(p1, p2) = Bar(p1, p2, 0.3, 0.9)
 
 """GravitationalField"""
 struct GravitationalField{D, S} <: AbstractObject
@@ -111,26 +85,22 @@ const EARTH = GravitationalField([0, -1], g)
 
 abstract type AbstractEnvironment end
 
-stateof(env::AbstractEnvironment) = hcat(positionof(env), velocityof(env))
-positionof(env::AbstractEnvironment) = vcat(positionof.(objectsof(env))...)
-velocityof(env::AbstractEnvironment) = vcat(velocityof.(objectsof(env))...)
+stateof(env::AbstractEnvironment) = cat(stateof.(objectsof(env))...; dims=3)
+positionof(env::AbstractEnvironment) = cat(positionof.(objectsof(env))...; dims=2)
+velocityof(env::AbstractEnvironment) = cat(velocityof.(objectsof(env))...; dims=2)
 dimensionof(env::AbstractEnvironment) = dimensionof(first(objectsof(env)))
-function accelerationof(env::AbstractEnvironment, i::Int)
-    d = dimensionof(env)
-    return accelerationof(env)[(i-1)*d+1:i*d]
-end
-staticof(env::AbstractEnvironment) = staticof(envof(env))
+accelerationof(env::AbstractEnvironment, i::Int) = accelerationof(env)[:,i]
 
 """WithStatic"""
-struct WithStatic{E<:AbstractEnvironment, S, C} <: AbstractEnvironment
+struct WithStatic{E, S<:Tuple, C} <: AbstractEnvironment
     env::E
     static::S
     _cache::C
 end
 
 envof(w::WithStatic) = w.env
-objectsof(w::WithStatic) = objectsof(w.env)
-accelerationof(w::WithStatic) = accelerationof(w.env) + w._cache
+objectsof(w::WithStatic) = objectsof(envof(w))
+accelerationof(w::WithStatic) = accelerationof(envof(w)) + w._cache
 staticof(ws::WithStatic) = ws.static
 
 WithStatic(env, static::AbstractObject) = WithStatic(env, tuple(static))
@@ -144,7 +114,7 @@ function WithStatic(env, static)
         end
         a
     end
-    _cache = vcat(as...)
+    _cache = cat(as...; dims=2)
     return WithStatic(env, static, _cache)
 end
 
@@ -169,36 +139,46 @@ function Space(objs::Tuple)
     return Space(objs, _cache)
 end
 
-acceleration_by_interaction(objs::NTuple{1,<:Particle}) = zeros(dimensionof(first(objs)))
-acceleration_by_interaction(objs::NTuple{1,<:Forced}) = accelerationof(first(objs))
+"""
+    accelerationof_by(obj1, obj2)
+
+Acceleration of `obj1` caused by `obj2`.
+"""
+function accelerationof_by(obj1, obj2)
+    Δp = positionof(obj2) - positionof(obj1)
+    r² = sum(abs2, Δp)
+    u = Δp / sqrt(r²)
+    return attractive_acceleration(massof(obj2), r²) * u
+end
+
 function acceleration_by_interaction(objects::Tuple)
     as = map(objects) do obj1
         objects′ = filter(obj2 -> !(obj1 === obj2), objects)
         a = zeros(dimensionof(obj1))
         if length(objects′) > 0
             for obj2 in objects′
-                a += accelerationof(obj1, obj2)
+                a += accelerationof_by(obj1, obj2)
             end
         end
-        obj1 isa Forced ? a + accelerationof(obj1) : a
+        obj1 isa Forced ? a + obj1.force / massof(obj1) : a
     end
-    return vcat(as...)
+    return cat(as...; dims=2)
 end
 
 reconstruct(s::Space, objects) = Space(objects)
-reconstruct(s::Space, states::AbstractMatrix) = 
-    Space(reconstruct.(objectsof(s), _tolist(dimensionof(s), states)))
-function reconstruct(s::Space, pvec::T, vvec::Union{T, Nothing}=nothing) where {T<:AbstractVector{<:Real}}
+function reconstruct(s::Space, S::AbstractArray{<:Real, 3})
     objs = objectsof(s)
-    dim = dimensionof(s)
-    ps = _tolist(dim, pvec)
-    vs = isnothing(vvec) ? fill(nothing, length(objs)) : _tolist(dim, vvec)
-    return Space([reconstruct(objs[i], ps[i], vs[i]) for i in 1:length(objs)])
+    return Space(reconstruct.(objs, [S[:,:,i] for i in 1:length(objs)]))
+end
+function reconstruct(s::Space, P::T, V::Union{T, Nothing}=nothing) where {T<:AbstractMatrix{<:Real}}
+    objs = objectsof(s)
+    n = length(objs)
+    ps = [P[:,i] for i in 1:n]
+    vs = isnothing(V) ? fill(nothing, n) : [V[:,i] for i in 1:n]
+    return Space(reconstruct.(objs, ps, vs))
 end
 
 export AbstractObject, Particle, Forced, Bar, GravitationalField, EARTH
-export objectof, massof, stateof, positionof, velocityof, dimensionof
-export AbstractEnvironment, Space, WithStatic
-export envof, forceof, staticof, objectsof, accelerationof
-
-end # module
+export objectof, forceof, massof, stateof, positionof, velocityof, dimensionof
+export AbstractEnvironment, WithStatic, Space
+export envof, objectsof, accelerationof, staticof

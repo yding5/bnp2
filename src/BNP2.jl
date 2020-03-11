@@ -42,8 +42,20 @@ end
 
 export orthonormalvecof, rotate, add_gaussiannoise
 
-include("World.jl")
-@reexport using .World
+### Phyics
+
+using PhysicalConstants: CODATA2014, CODATA2018
+
+const G = CODATA2018.NewtonianConstantOfGravitation.val
+const g = CODATA2014.StandardAccelerationOfGravitation.val
+
+function attractive_acceleration(m, r²)
+    @argcheck !iszero(r²) "Attractive acceleration is undefined for 0 distance."
+    return G * m / r²
+end
+attractive_force(m1, m2, r²) = m1 * attractive_acceleration(m2, r²)
+
+include("world.jl")
 include("simulators.jl")
 export AbstractSimulator, simulate, transition, SimpleSimulator, DiffEqSimulator, PymunkSimulator
 include("vis.jl")
