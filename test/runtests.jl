@@ -4,7 +4,8 @@ using Test
 
 @testset "Tests" begin
     tests = [
-        "World",
+        "world",
+        "simulators",
     ]
 
     foreach(tests) do t

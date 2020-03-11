@@ -1,6 +1,3 @@
-using Parameters, ArgCheck
-import Parameters: reconstruct
-
 ### Object
 
 abstract type AbstractObject end
@@ -177,8 +174,3 @@ function reconstruct(s::Space, P::T, V::Union{T, Nothing}=nothing) where {T<:Abs
     vs = isnothing(V) ? fill(nothing, n) : [V[:,i] for i in 1:n]
     return Space(reconstruct.(objs, ps, vs))
 end
-
-export AbstractObject, Particle, Forced, Bar, GravitationalField, EARTH
-export objectof, forceof, massof, stateof, positionof, velocityof, dimensionof
-export AbstractEnvironment, WithStatic, Space
-export envof, objectsof, accelerationof, staticof

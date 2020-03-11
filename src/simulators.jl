@@ -1,7 +1,8 @@
 abstract type AbstractSimulator end
 
 transition(env::AbstractEnvironment, dt::AbstractFloat) = transition(env, SimpleSimulator(dt))
-simulate(env::AbstractEnvironment, dt::AbstractFloat, n_steps::Int) = simulate(env, SimpleSimulator(dt), n_steps)
+simulate(env::AbstractEnvironment, dt::AbstractFloat, n_steps::Int) = 
+    simulate(env, SimpleSimulator(dt), n_steps)
 
 function simulate(env::T, sim::AbstractSimulator, n_steps::Int) where {T<:AbstractEnvironment}
     traj = Vector{T}(undef, n_steps)
@@ -19,12 +20,9 @@ end
 
 function transition(env::AbstractEnvironment, sim::SimpleSimulator)
     q, p = positionof(env), velocityof(env)
-    acc = accelerationof(env)
-    p += sim.dt / 2 * acc
+    p += sim.dt / 2 * accelerationof(env)
     q += sim.dt * p
-    env = reconstruct(env, q, p)
-    acc = accelerationof(env)
-    p += sim.dt / 2 * acc
+    p += sim.dt / 2 * accelerationof(reconstruct(env, q, p))
     return reconstruct(env, q, p)
 end
 
@@ -84,17 +82,16 @@ pymunkobj(f::Forced) = pymunkobj(f.obj)
 
 function pymunkobj(bar::Bar)
     body_static = pymunk.Body(body_type=pymunk.Body.STATIC)
-    v = bar.pstart - bar.pend
-    u = orthonormalvecof(v) * bar.tickness / 2
-    shape = pymunk.Poly(body_static, [bar.pstart - u, bar.pstart + u, bar.pend + u, bar.pend - u])
+    v = bar.p1 - bar.p2
+    u = orthonormalvecof(v) * bar.thickness / 2
+    shape = pymunk.Poly(body_static, [bar.p1 - u, bar.p1 + u, bar.p2 + u, bar.p2 - u])
     shape.elasticity = bar.elasticity
     return shape
 end
 
-function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
-    objects = objectsof(env)
+function pymunkobj(env::AbstractEnvironment)
     space = pymunk.Space()
-    for (i, obj) in enumerate(objects)
+    for (i, obj) in enumerate(objectsof(env))
         body, shape = pymunkobj(obj)
         f = massof(obj) * accelerationof(env, i)
         body.apply_force_at_world_point(force=tuple(f...), point=(0, 0))
@@ -106,7 +103,13 @@ function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
             space.add(obj)
         end
     end
+    return space
+end
+
+function transition(env::T, sim::PymunkSimulator) where {T<:AbstractEnvironment}
+    space = pymunkobj(env)
     space.step(sim.dt)
+    objects = objectsof(env)
     objects = map(1:length(objectsof(env))) do i
         position = [get.(Ref(space.shapes[i].body.position), 0:1)...]
         velocity = [get.(Ref(space.shapes[i].body.velocity), 0:1)...]
