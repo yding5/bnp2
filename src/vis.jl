@@ -58,11 +58,25 @@ function plot!(ax, env::AbstractEnvironment; kwargs...)
     end
 end
 
-function plot!(ax, traj::AbstractVector{<:AbstractEnvironment}; alpha=0.5, kwargs...)
+function plot!(
+    ax, traj::AbstractVector{<:AbstractEnvironment}; 
+    lw="-", c=COLORS[:blue], alpha=0.5, lws=nothing, first=nothing, kwargs...
+)
     Q = cat(positionof.(traj)...; dims=3)
-    for i in 1:size(Q, 2)
-        plot!(ax, TwoDimPath(Q[1,i,:], Q[2,i,:]), "-"; alpha=alpha)
+    n = size(Q, 2)
+    if isnothing(lws)
+        lws = fill(lw, n)
+    else
+        @argcheck length(lws) == n
     end
+    local handler
+    for (i, lw) in zip(1:n, lws)
+        handler = plot!(
+            ax, TwoDimPath(Q[1,i,:], Q[2,i,:]), lw; 
+            c=c, alpha=alpha, first=first
+        )
+    end
+    return handler
 end
 
 ### Animation

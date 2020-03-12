@@ -203,7 +203,8 @@ end
 transit(nbf::NeuralRelation, s) = leapfrog(nbf, s)
 
 function (nbf::NeuralRelation)(s, s′)
-    s, s′ = reshape(s, size(s, 1), size(s, 2), :), reshape(s′, size(s′, 1), size(s′, 2), :)
+    s = reshape(s, size(s, 1), size(s, 2), :)
+    s′ = reshape(s′, size(s′, 1), size(s′, 2), :)
     return lossof(nbf, s, s′)
 end
 
