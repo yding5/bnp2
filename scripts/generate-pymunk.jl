@@ -2,12 +2,15 @@ using DrWatson
 @quickactivate "BNP2"
 
 args = (
-    seed    = 1,
+    seed    = 1110,
     dataset = "bouncing_ball",
     n_data  = 100,
 )
 
 using BNP2, Random, ProgressMeter
+
+savedir = datadir("pymunk-$(args.dataset)")
+isdir(savedir) || mkdir(savedir)    # create directory if not exist
 
 function generate_pymunk(obj, env, savedir, do_HTML=false)
     sim = PymunkSimulator(0.075)
