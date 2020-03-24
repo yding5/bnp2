@@ -111,8 +111,8 @@ function animof(
         else
             xmid, ymid = xmid_global, ymid_global
         end
-        ax.set_xlim([xmid - dev, xmid + dev])
-        ax.set_ylim([ymid - dev, ymid + dev])
+#         ax.set_xlim([xmid - dev, xmid + dev])
+#         ax.set_ylim([ymid - dev, ymid + dev])
         do_plotpath && for i in 1:size(Q, 2)
             plot!(ax, TwoDimPath(Q[1,i,1:t], Q[2,i,1:t]), "-"; c=COLORS[:gray], alpha=0.5)
         end

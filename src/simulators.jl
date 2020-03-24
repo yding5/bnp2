@@ -28,7 +28,7 @@ end
 
 ### OrdinaryDiffEq
 
-using OrdinaryDiffEq: DynamicalODEProblem, Tsit5, init, step!
+using OrdinaryDiffEq: DynamicalODEProblem, VerletLeapfrog, Tsit5, init, step!
 
 struct DiffEqSimulator{T} <: AbstractSimulator
     dt::T
